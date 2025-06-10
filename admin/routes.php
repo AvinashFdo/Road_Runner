@@ -1,6 +1,4 @@
 <?php
-// Admin Route Management
-// Save this as: admin/routes.php
 
 session_start();
 require_once '../db_connection.php';
