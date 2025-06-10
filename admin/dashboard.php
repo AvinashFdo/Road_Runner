@@ -1,6 +1,4 @@
 <?php
-// Admin Dashboard
-// Save this as: admin/dashboard.php
 
 session_start();
 require_once '../db_connection.php';
@@ -11,7 +9,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['user_type'] !== 'admin') {
     exit();
 }
 
-// Get some basic statistics
+// statistics
 try {
     // Count total users
     $stmt = $pdo->query("SELECT COUNT(*) as total_users FROM users");
@@ -64,6 +62,7 @@ try {
                 <a href="#" onclick="alert('Coming soon!')">Manage Buses</a>
                 <a href="routes.php">Manage Routes</a>
                 <a href="#" onclick="alert('Coming soon!')">View Bookings</a>
+                <a href="refunds.php">Process Refunds</a>
                 <a href="#" onclick="alert('Coming soon!')">Reports</a>
             </div>
         </div>
