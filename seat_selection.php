@@ -393,10 +393,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
                         </div>
                     </div>
                     
-                    <!-- Simple Info -->
-                    <div style="background: #e8f4fd; border-radius: 8px; padding: 1rem; margin-top: 1rem; font-size: 0.9rem; text-align: center;">
-                        <strong>🪑 Simple Seat Numbering:</strong> Seats are numbered 1, 2, 3, 4... from front to back, left to right
-                    </div>
+                    
                 </div>
             </div>
             
