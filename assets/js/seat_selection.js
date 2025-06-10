@@ -1,11 +1,8 @@
-// Seat Selection JavaScript - UPDATED with Simple Seat Numbers
-// Save this as: assets/js/seat_selection.js
-
 let selectedSeats = new Set();
 let passengers = [];
 let passengerCounter = 0;
-let basePricePerSeat = 0; // Will be set by the page
-let seatNumberMap = new Map(); // Maps seat IDs to simple numbers
+let basePricePerSeat = 0; 
+let seatNumberMap = new Map(); 
 
 // Initialize the seat selection system
 function initSeatSelection(basePrice, accountHolderName) {
