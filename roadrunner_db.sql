@@ -1,6 +1,3 @@
--- Step 1: Create Database and Users Table
--- Run this in phpMyAdmin or MySQL command line
-
 -- Create the database
 CREATE DATABASE IF NOT EXISTS roadrunner_db;
 USE roadrunner_db;
@@ -25,10 +22,8 @@ VALUES ('System Admin', 'admin@roadrunner.com', '0771234567', '$2y$10$92IXUNpkjO
 INSERT INTO users (full_name, email, phone, password, user_type) 
 VALUES ('John Doe', 'john@test.com', '0777654321', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'passenger');
 
--- Check if data was inserted correctly
-SELECT * FROM users;
 
--- Buses table - stores bus information
+-- Buses table
 CREATE TABLE buses (
     bus_id INT AUTO_INCREMENT PRIMARY KEY,
     operator_id INT NOT NULL,
@@ -36,29 +31,29 @@ CREATE TABLE buses (
     bus_name VARCHAR(100),
     bus_type ENUM('AC', 'Non-AC', 'Semi-Luxury', 'Luxury') DEFAULT 'Non-AC',
     total_seats INT NOT NULL,
-    seat_configuration VARCHAR(10) DEFAULT '2x2', -- Format like 2x2, 2x3 etc
-    amenities TEXT, -- JSON or comma-separated list of amenities
+    seat_configuration VARCHAR(10) DEFAULT '2x2',
+    amenities TEXT, 
     status ENUM('active', 'maintenance', 'inactive') DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (operator_id) REFERENCES users(user_id) ON DELETE CASCADE
 );
 
--- Routes table - stores route information  
+-- Routes table  
 CREATE TABLE routes (
     route_id INT AUTO_INCREMENT PRIMARY KEY,
     route_name VARCHAR(100) NOT NULL,
     origin VARCHAR(100) NOT NULL,
     destination VARCHAR(100) NOT NULL,
     distance_km DECIMAL(6,2),
-    estimated_duration VARCHAR(20), -- Format: "3h 30m"
+    estimated_duration VARCHAR(20),
     route_description TEXT,
     status ENUM('active', 'inactive') DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
--- Schedules table - stores bus schedules for routes
+-- Schedules table -
 CREATE TABLE schedules (
     schedule_id INT AUTO_INCREMENT PRIMARY KEY,
     bus_id INT NOT NULL,
@@ -74,7 +69,7 @@ CREATE TABLE schedules (
     FOREIGN KEY (route_id) REFERENCES routes(route_id) ON DELETE CASCADE
 );
 
--- Seats table - stores seat configuration for each bus
+-- Seats table
 CREATE TABLE seats (
     seat_id INT AUTO_INCREMENT PRIMARY KEY,
     bus_id INT NOT NULL,
@@ -86,10 +81,10 @@ CREATE TABLE seats (
     UNIQUE KEY unique_bus_seat (bus_id, seat_number)
 );
 
--- Bookings table - stores passenger bookings
+-- Bookings table
 CREATE TABLE bookings (
     booking_id INT AUTO_INCREMENT PRIMARY KEY,
-    booking_reference VARCHAR(20) UNIQUE NOT NULL, -- RR001, RR002 etc
+    booking_reference VARCHAR(20) UNIQUE NOT NULL, 
     passenger_id INT NOT NULL,
     schedule_id INT NOT NULL,
     seat_id INT NOT NULL,
@@ -105,10 +100,10 @@ CREATE TABLE bookings (
     FOREIGN KEY (passenger_id) REFERENCES users(user_id) ON DELETE CASCADE,
     FOREIGN KEY (schedule_id) REFERENCES schedules(schedule_id) ON DELETE CASCADE,
     FOREIGN KEY (seat_id) REFERENCES seats(seat_id) ON DELETE CASCADE,
-    UNIQUE KEY unique_seat_date (seat_id, travel_date) -- Prevent double booking same seat same date
+    UNIQUE KEY unique_seat_date (seat_id, travel_date)
 );
 
--- Parcels table - stores parcel delivery information
+-- Parcels table
 CREATE TABLE parcels (
     parcel_id INT AUTO_INCREMENT PRIMARY KEY,
     tracking_number VARCHAR(20) UNIQUE NOT NULL,
@@ -130,7 +125,7 @@ CREATE TABLE parcels (
     FOREIGN KEY (route_id) REFERENCES routes(route_id) ON DELETE CASCADE
 );
 
--- Reviews table - stores passenger reviews
+-- Reviews table
 CREATE TABLE reviews (
     review_id INT AUTO_INCREMENT PRIMARY KEY,
     booking_id INT NOT NULL,
