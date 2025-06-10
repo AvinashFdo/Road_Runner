@@ -1,6 +1,4 @@
 <?php
-// Step 3: Main Index Page
-// Save this as: index.php
 
 session_start();
 require_once 'db_connection.php';
