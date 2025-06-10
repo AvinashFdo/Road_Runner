@@ -1,5 +1,5 @@
 <?php
-// Booking Confirmation System
+// Booking Confirmation System - UPDATED with Horizontal Seat Numbers
 // Save this as: booking_confirmation.php
 
 session_start();
@@ -18,6 +18,53 @@ if (empty($booking_refs)) {
     exit();
 }
 
+// Function to convert database seat number to horizontal visual layout number
+function getHorizontalSeatNumber($seatNumber, $busId, $pdo) {
+    try {
+        // Get bus seat configuration
+        $stmt = $pdo->prepare("SELECT seat_configuration FROM buses WHERE bus_id = ?");
+        $stmt->execute([$busId]);
+        $seatConfig = $stmt->fetch()['seat_configuration'] ?? '2x2';
+        
+        // Parse configuration (e.g., "2x2" means 2 left + 2 right = 4 seats per row)
+        $config = explode('x', $seatConfig);
+        $leftSeats = (int)$config[0];
+        $rightSeats = (int)$config[1];
+        $seatsPerRow = $leftSeats + $rightSeats;
+        
+        // Get all seats for this bus ordered by seat_number (alphabetical)
+        $stmt = $pdo->prepare("SELECT seat_number FROM seats WHERE bus_id = ? ORDER BY seat_number ASC");
+        $stmt->execute([$busId]);
+        $allSeats = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        // Find the position of this seat in the alphabetical list
+        $alphabeticalPosition = array_search($seatNumber, $allSeats);
+        if ($alphabeticalPosition === false) {
+            return $seatNumber; // Return original if not found
+        }
+        
+        // Convert alphabetical position to row-based position
+        // Alphabetical: A01, A02, A03, B01, B02, B03, C01, C02, C03...
+        // Visual: Row 1 (A01,B01,C01), Row 2 (A02,B02,C02), Row 3 (A03,B03,C03)...
+        
+        $totalRows = count($allSeats) / $seatsPerRow;
+        $seatLetter = substr($seatNumber, 0, 1); // A, B, C, etc.
+        $seatRowNum = (int)substr($seatNumber, 1); // 01, 02, 03, etc.
+        
+        // Calculate position within row (A=0, B=1, C=2, etc.)
+        $positionInRow = ord($seatLetter) - ord('A');
+        
+        // Calculate horizontal seat number: (row - 1) * seats_per_row + position_in_row + 1
+        $horizontalNumber = (($seatRowNum - 1) * $seatsPerRow) + $positionInRow + 1;
+        
+        return $horizontalNumber;
+        
+    } catch (PDOException $e) {
+        // If there's an error, return the original seat number
+        return $seatNumber;
+    }
+}
+
 // Convert comma-separated booking references to array
 $booking_references = explode(',', $booking_refs);
 $bookings = [];
@@ -32,7 +79,7 @@ try {
                 b.booking_id, b.booking_reference, b.passenger_name, b.passenger_gender, 
                 b.travel_date, b.total_amount, b.booking_status, b.payment_status, b.booking_date,
                 s.departure_time, s.arrival_time,
-                bus.bus_name, bus.bus_number, bus.bus_type, bus.amenities,
+                bus.bus_id, bus.bus_name, bus.bus_number, bus.bus_type, bus.amenities,
                 r.route_name, r.origin, r.destination, r.distance_km, r.estimated_duration,
                 seat.seat_number, seat.seat_type,
                 u.full_name as operator_name, u.phone as operator_phone
@@ -48,6 +95,8 @@ try {
         $booking = $stmt->fetch();
         
         if ($booking) {
+            // Add horizontal seat number
+            $booking['horizontal_seat_number'] = getHorizontalSeatNumber($booking['seat_number'], $booking['bus_id'], $pdo);
             $bookings[] = $booking;
             $total_amount += $booking['total_amount'];
             
@@ -106,7 +155,7 @@ function generateSimplePDFTicket($bookings, $bus_info) {
     foreach ($bookings as $index => $booking) {
         $content .= "\nPassenger " . ($index + 1) . ":\n";
         $content .= "  Name: " . $booking['passenger_name'] . "\n";
-        $content .= "  Seat Number: " . $booking['seat_number'] . "\n";
+        $content .= "  Seat Number: " . $booking['horizontal_seat_number'] . "\n";
         $content .= "  Gender: " . ucfirst($booking['passenger_gender']) . "\n";
         $content .= "  Booking Reference: " . $booking['booking_reference'] . "\n";
         $content .= "  Amount: LKR " . number_format($booking['total_amount']) . "\n";
@@ -129,6 +178,7 @@ function generateSimplePDFTicket($bookings, $bus_info) {
     $content .= "• Keep booking references for journey\n";
     $content .= "• Contact operator for schedule changes\n";
     $content .= "• Free cancellation up to 2 hours before\n";
+    $content .= "• Seats numbered 1,2,3... from front-left across rows\n";
     
     $content .= "\n=====================================\n";
     $content .= "CONTACT INFORMATION\n";
@@ -270,7 +320,7 @@ if (isset($_GET['download']) && $_GET['download'] === 'pdf') {
                                 <td><strong><?php echo htmlspecialchars($booking['passenger_name']); ?></strong></td>
                                 <td>
                                     <span style="background: #4caf50; color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-weight: bold;">
-                                        <?php echo htmlspecialchars($booking['seat_number']); ?>
+                                        <?php echo $booking['horizontal_seat_number']; ?>
                                     </span>
                                 </td>
                                 <td><?php echo ucfirst($booking['seat_type']); ?></td>
@@ -342,6 +392,8 @@ if (isset($_GET['download']) && $_GET['download'] === 'pdf') {
                     📋 View All Bookings
                 </a>
             </div>
+
+            
 
             <!-- Important Information -->
             <div class="alert alert_info">
