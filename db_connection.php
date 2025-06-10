@@ -1,11 +1,8 @@
 <?php
-// Step 2: Database Connection File
-// Save this as: db_connection.php
 
-// Database configuration
 $host = 'localhost';
 $username = 'root';
-$password = '';  // Default XAMPP MySQL password is empty
+$password = '';  
 $database = 'roadrunner_db';
 
 try {
@@ -17,9 +14,6 @@ try {
     
     // Set default fetch mode to associative array
     $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-    
-    // Optional: Uncomment the line below to test connection (remove after testing)
-    // echo "Database connection successful!";
     
 } catch(PDOException $e) {
     // If connection fails, show error and stop execution
