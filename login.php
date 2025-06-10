@@ -1,6 +1,4 @@
 <?php
-// Step 5: Login System
-// Save this as: login.php
 
 session_start();
 require_once 'db_connection.php';
@@ -107,14 +105,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </ul>
                 </div>
             <?php endif; ?>
-            
-            <!-- Test Accounts Info (Remove this in production) -->
-            <div class="alert alert_info">
-                <strong>Test Accounts:</strong><br>
-                <strong>Admin:</strong> admin@roadrunner.com / admin123<br>
-                <strong>Passenger:</strong> john@test.com / pass123<br>
-                <em>Or use the account you just created!</em>
-            </div>
             
             <!-- Login Form -->
             <form method="POST" action="login.php">
