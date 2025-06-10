@@ -1,7 +1,7 @@
 <?php
 error_reporting(E_ALL & ~E_WARNING & ~E_NOTICE);
 session_start();
-// My Bookings System with Grouped Bookings
+// My Bookings System with Grouped Bookings - UPDATED with Simple Seat Numbers
 // Save this as: my_bookings.php
 
 session_start();
@@ -16,6 +16,52 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 $message = '';
 $error = '';
+
+// Function to convert database seat number to horizontal visual layout number
+function getHorizontalSeatNumber($seatNumber, $busId, $pdo) {
+    try {
+        // Get bus seat configuration
+        $stmt = $pdo->prepare("SELECT seat_configuration FROM buses WHERE bus_id = ?");
+        $stmt->execute([$busId]);
+        $seatConfig = $stmt->fetch()['seat_configuration'] ?? '2x2';
+        
+        // Parse configuration (e.g., "2x2" means 2 left + 2 right = 4 seats per row)
+        $config = explode('x', $seatConfig);
+        $leftSeats = (int)$config[0];
+        $rightSeats = (int)$config[1];
+        $seatsPerRow = $leftSeats + $rightSeats;
+        
+        // Get all seats for this bus ordered by seat_number (alphabetical)
+        $stmt = $pdo->prepare("SELECT seat_number FROM seats WHERE bus_id = ? ORDER BY seat_number ASC");
+        $stmt->execute([$busId]);
+        $allSeats = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        // Find the position of this seat in the alphabetical list
+        $alphabeticalPosition = array_search($seatNumber, $allSeats);
+        if ($alphabeticalPosition === false) {
+            return $seatNumber; // Return original if not found
+        }
+        
+        // Convert alphabetical position to row-based position
+        // Alphabetical: A01, A02, A03, B01, B02, B03, C01, C02, C03...
+        // Visual: Row 1 (A01,B01,C01), Row 2 (A02,B02,C02), Row 3 (A03,B03,C03)...
+        
+        $seatLetter = substr($seatNumber, 0, 1); // A, B, C, etc.
+        $seatRowNum = (int)substr($seatNumber, 1); // 01, 02, 03, etc.
+        
+        // Calculate position within row (A=0, B=1, C=2, etc.)
+        $positionInRow = ord($seatLetter) - ord('A');
+        
+        // Calculate horizontal seat number: (row - 1) * seats_per_row + position_in_row + 1
+        $horizontalNumber = (($seatRowNum - 1) * $seatsPerRow) + $positionInRow + 1;
+        
+        return $horizontalNumber;
+        
+    } catch (PDOException $e) {
+        // If there's an error, return the original seat number
+        return $seatNumber;
+    }
+}
 
 // Handle booking cancellation
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cancel_booking_group'])) {
@@ -87,8 +133,8 @@ try {
         SELECT 
             b.booking_id, b.booking_reference, b.passenger_name, b.passenger_gender,
             b.travel_date, b.total_amount, b.booking_status, b.payment_status, b.booking_date,
-            s.departure_time, s.arrival_time,
-            bus.bus_name, bus.bus_number, bus.bus_type,
+            s.departure_time, s.arrival_time, s.schedule_id,
+            bus.bus_id, bus.bus_name, bus.bus_number, bus.bus_type,
             r.route_name, r.origin, r.destination, r.distance_km,
             seat.seat_number, seat.seat_type,
             u.full_name as operator_name, u.phone as operator_phone
@@ -119,10 +165,14 @@ try {
             ];
         }
         
+        // Convert seat number to horizontal numbering
+        $horizontalSeatNumber = getHorizontalSeatNumber($booking['seat_number'], $booking['bus_id'], $pdo);
+        
         $grouped_bookings[$group_key]['passengers'][] = [
             'name' => $booking['passenger_name'],
             'gender' => $booking['passenger_gender'],
-            'seat_number' => $booking['seat_number'],
+            'seat_number' => $booking['seat_number'], // Original for reference
+            'simple_seat_number' => $horizontalSeatNumber, // Horizontal number for display
             'seat_type' => $booking['seat_type'],
             'booking_reference' => $booking['booking_reference'],
             'amount' => $booking['total_amount']
@@ -316,7 +366,10 @@ try {
                                             <span class="badge badge_<?php echo $passenger['gender']; ?>">
                                                 <?php echo ucfirst($passenger['gender']); ?>
                                             </span>
-                                            <span>Seat <?php echo $passenger['seat_number']; ?> (<?php echo ucfirst($passenger['seat_type']); ?>)</span>
+                                            <span style="background: #4caf50; color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-weight: bold;">
+                                                Seat <?php echo $passenger['simple_seat_number']; ?>
+                                            </span>
+                                            <span style="color: #666; font-size: 0.8rem;">(<?php echo ucfirst($passenger['seat_type']); ?>)</span>
                                             <code style="background: #f5f5f5; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem;">
                                                 <?php echo $passenger['booking_reference']; ?>
                                             </code>
@@ -401,7 +454,9 @@ try {
                                     <div class="passenger-details">
                                         <strong><?php echo htmlspecialchars($passenger['name']); ?></strong>
                                         <div class="passenger-meta">
-                                            <span>Seat <?php echo $passenger['seat_number']; ?></span>
+                                            <span style="background: #95a5a6; color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-weight: bold;">
+                                                Seat <?php echo $passenger['simple_seat_number']; ?>
+                                            </span>
                                             <code style="background: #f5f5f5; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem;">
                                                 <?php echo $passenger['booking_reference']; ?>
                                             </code>
@@ -457,7 +512,9 @@ try {
                                     <div class="passenger-details">
                                         <strong><?php echo htmlspecialchars($passenger['name']); ?></strong>
                                         <div class="passenger-meta">
-                                            <span>Seat <?php echo $passenger['seat_number']; ?></span>
+                                            <span style="background: #95a5a6; color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-weight: bold;">
+                                                Seat <?php echo $passenger['simple_seat_number']; ?>
+                                            </span>
                                             <code style="background: #f5f5f5; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem;">
                                                 <?php echo $passenger['booking_reference']; ?>
                                             </code>
@@ -479,6 +536,8 @@ try {
                 <?php endforeach; ?>
             <?php endif; ?>
         </div>
+
+        
 
         <!-- Quick Actions -->
         <div class="features_grid mt_2">
