@@ -383,7 +383,7 @@ if (isset($_GET['download']) && $_GET['download'] === 'pdf') {
             <!-- Action Buttons -->
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 2rem 0;">
                 <a href="?<?php echo http_build_query($_GET); ?>&download=pdf" class="btn btn_primary" style="text-align: center;">
-                    📄 Download PDF Tickets
+                    📄 Download Tickets
                 </a>
                 <a href="search_buses.php" class="btn btn_success" style="text-align: center;">
                     🔍 Book Another Trip
