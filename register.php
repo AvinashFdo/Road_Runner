@@ -1,6 +1,4 @@
 <?php
-// Step 4: Registration System
-// Save this as: register.php
 
 session_start();
 require_once 'db_connection.php';
@@ -68,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
     
-    // If no errors, create the account
+    //create account
     if (empty($errors)) {
         try {
             $hashed_password = password_hash($password, PASSWORD_DEFAULT);
