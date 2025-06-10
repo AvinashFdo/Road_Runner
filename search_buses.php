@@ -1,6 +1,4 @@
 <?php
-// Passenger Bus Search System
-// Save this as: search_buses.php
 
 session_start();
 require_once 'db_connection.php';
