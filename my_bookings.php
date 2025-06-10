@@ -1,8 +1,6 @@
 <?php
 error_reporting(E_ALL & ~E_WARNING & ~E_NOTICE);
 session_start();
-// My Bookings System with Grouped Bookings - UPDATED with Simple Seat Numbers
-// Save this as: my_bookings.php
 
 session_start();
 require_once 'db_connection.php';
@@ -17,7 +15,7 @@ $user_id = $_SESSION['user_id'];
 $message = '';
 $error = '';
 
-// Function to convert database seat number to horizontal visual layout number
+
 function getHorizontalSeatNumber($seatNumber, $busId, $pdo) {
     try {
         // Get bus seat configuration
@@ -25,40 +23,31 @@ function getHorizontalSeatNumber($seatNumber, $busId, $pdo) {
         $stmt->execute([$busId]);
         $seatConfig = $stmt->fetch()['seat_configuration'] ?? '2x2';
         
-        // Parse configuration (e.g., "2x2" means 2 left + 2 right = 4 seats per row)
         $config = explode('x', $seatConfig);
         $leftSeats = (int)$config[0];
         $rightSeats = (int)$config[1];
         $seatsPerRow = $leftSeats + $rightSeats;
         
-        // Get all seats for this bus ordered by seat_number (alphabetical)
         $stmt = $pdo->prepare("SELECT seat_number FROM seats WHERE bus_id = ? ORDER BY seat_number ASC");
         $stmt->execute([$busId]);
         $allSeats = $stmt->fetchAll(PDO::FETCH_COLUMN);
-        
-        // Find the position of this seat in the alphabetical list
+
         $alphabeticalPosition = array_search($seatNumber, $allSeats);
         if ($alphabeticalPosition === false) {
-            return $seatNumber; // Return original if not found
+            return $seatNumber; 
         }
         
-        // Convert alphabetical position to row-based position
-        // Alphabetical: A01, A02, A03, B01, B02, B03, C01, C02, C03...
-        // Visual: Row 1 (A01,B01,C01), Row 2 (A02,B02,C02), Row 3 (A03,B03,C03)...
-        
-        $seatLetter = substr($seatNumber, 0, 1); // A, B, C, etc.
-        $seatRowNum = (int)substr($seatNumber, 1); // 01, 02, 03, etc.
-        
-        // Calculate position within row (A=0, B=1, C=2, etc.)
+        $seatLetter = substr($seatNumber, 0, 1); 
+        $seatRowNum = (int)substr($seatNumber, 1); 
+
         $positionInRow = ord($seatLetter) - ord('A');
-        
-        // Calculate horizontal seat number: (row - 1) * seats_per_row + position_in_row + 1
+
         $horizontalNumber = (($seatRowNum - 1) * $seatsPerRow) + $positionInRow + 1;
         
         return $horizontalNumber;
         
     } catch (PDOException $e) {
-        // If there's an error, return the original seat number
+       
         return $seatNumber;
     }
 }
@@ -94,7 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cancel_booking_group'
                     continue;
                 }
                 
-                // Check if cancellation is allowed (2 hours before departure)
+                // Check if cancellation is allowed
                 $departure_datetime = $booking['travel_date'] . ' ' . $booking['departure_time'];
                 $time_difference = strtotime($departure_datetime) - time();
                 $hours_until_departure = $time_difference / 3600;
@@ -127,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cancel_booking_group'
     }
 }
 
-// Get all bookings for the user and group them
+// Get all bookings
 try {
     $stmt = $pdo->prepare("
         SELECT 
@@ -157,7 +146,7 @@ try {
         
         if (!isset($grouped_bookings[$group_key])) {
             $grouped_bookings[$group_key] = [
-                'trip_info' => $booking, // Use first booking for trip info
+                'trip_info' => $booking, 
                 'passengers' => [],
                 'total_amount' => 0,
                 'booking_references' => [],
@@ -171,8 +160,8 @@ try {
         $grouped_bookings[$group_key]['passengers'][] = [
             'name' => $booking['passenger_name'],
             'gender' => $booking['passenger_gender'],
-            'seat_number' => $booking['seat_number'], // Original for reference
-            'simple_seat_number' => $horizontalSeatNumber, // Horizontal number for display
+            'seat_number' => $booking['seat_number'], 
+            'simple_seat_number' => $horizontalSeatNumber, 
             'seat_type' => $booking['seat_type'],
             'booking_reference' => $booking['booking_reference'],
             'amount' => $booking['total_amount']
@@ -186,18 +175,25 @@ try {
     $upcoming_bookings = [];
     $past_bookings = [];
     $cancelled_bookings = [];
-    
+
     foreach ($grouped_bookings as $group) {
         $travel_datetime = strtotime($group['trip_info']['travel_date'] . ' ' . $group['trip_info']['departure_time']);
         $is_future = $travel_datetime > time();
+        $booking_status = $group['trip_info']['booking_status'];
         
-        if ($group['trip_info']['booking_status'] === 'cancelled') {
+        // Hide refunded bookings from user view
+        if ($booking_status === 'refunded') {
+            continue; 
+        }
+        
+        if ($booking_status === 'cancelled') {
             $cancelled_bookings[] = $group;
         } elseif ($is_future) {
             $upcoming_bookings[] = $group;
         } else {
             $past_bookings[] = $group;
         }
+
     }
     
 } catch (PDOException $e) {
@@ -500,7 +496,11 @@ try {
                                 <div style="color: #666;">
                                     <strong>Date:</strong> <?php echo date('D, M j, Y', strtotime($trip['travel_date'])); ?><br>
                                     <strong>Route:</strong> <?php echo htmlspecialchars($trip['origin']); ?> → <?php echo htmlspecialchars($trip['destination']); ?><br>
-                                    <strong>Refund Status:</strong> Processing
+                                    <strong>Refund Status:</strong> 
+                                    <span class="badge badge_operator">Processing</span>
+                                    <small style="display: block; margin-top: 0.5rem; color: #666;">
+                                        Seat will become available after refund completion (3-5 business days)
+                                    </small>
                                 </div>
                             </div>
                         </div>
