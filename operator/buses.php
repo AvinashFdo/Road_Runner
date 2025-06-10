@@ -1,7 +1,4 @@
 <?php
-// Operator Bus Management
-// Save this as: operator/buses.php
-
 session_start();
 require_once '../db_connection.php';
 
