@@ -1,20 +1,49 @@
-// Seat Selection JavaScript - FIXED VERSION
+// Seat Selection JavaScript - UPDATED with Simple Seat Numbers
 // Save this as: assets/js/seat_selection.js
 
 let selectedSeats = new Set();
 let passengers = [];
 let passengerCounter = 0;
 let basePricePerSeat = 0; // Will be set by the page
+let seatNumberMap = new Map(); // Maps seat IDs to simple numbers
 
 // Initialize the seat selection system
 function initSeatSelection(basePrice, accountHolderName) {
     basePricePerSeat = basePrice;
+    
+    // Create seat number mapping
+    createSeatNumberMapping();
     
     // Initialize with one passenger
     addPassenger(accountHolderName);
     
     // Initialize form validation
     setupFormValidation();
+}
+
+// Create mapping from seat IDs to simple numbers (1, 2, 3...) based on visual layout
+function createSeatNumberMapping() {
+    const seatRows = document.querySelectorAll('.seat_row');
+    let seatCounter = 1;
+    
+    // Process each row from top to bottom
+    seatRows.forEach(row => {
+        const seats = row.querySelectorAll('.seat');
+        
+        // Process seats in each row from left to right
+        seats.forEach(seat => {
+            const seatId = seat.getAttribute('data-seat-id');
+            if (seatId) {
+                seatNumberMap.set(seatId, seatCounter);
+                seatCounter++;
+            }
+        });
+    });
+}
+
+// Get simple seat number from seat ID
+function getSimpleSeatNumber(seatId) {
+    return seatNumberMap.get(seatId) || 'Unknown';
 }
 
 function selectSeat(seatElement) {
@@ -25,7 +54,7 @@ function selectSeat(seatElement) {
     }
     
     const seatId = seatElement.getAttribute('data-seat-id');
-    const seatNumber = seatElement.getAttribute('data-seat-number');
+    const simpleSeatNumber = getSimpleSeatNumber(seatId);
     
     if (seatElement.classList.contains('selected')) {
         // Deselect seat
@@ -54,7 +83,7 @@ function selectSeat(seatElement) {
         
         // Assign to first passenger without a seat
         passengerWithoutSeat.seatId = seatId;
-        passengerWithoutSeat.seatNumber = seatNumber;
+        passengerWithoutSeat.seatNumber = simpleSeatNumber; // Use simple number
         updatePassengerDisplay(passengerWithoutSeat.id);
     }
     
@@ -167,13 +196,15 @@ function updatePassengerDisplay(passengerId) {
         const seatStatus = passengerElement.querySelector('.seat_status .seat_indicator');
         const hiddenSeatInput = passengerElement.querySelector('input[name*="[seat_id]"]');
         
-        if (passenger.seatId) {
+        if (passenger.seatId && passenger.seatNumber) {
+            // Show simple seat number (1, 2, 3...)
             seatStatus.textContent = `Seat ${passenger.seatNumber}`;
             seatStatus.style.display = 'inline-block';
             seatStatus.style.background = '#4caf50';
             seatStatus.style.color = 'white';
             seatStatus.style.padding = '0.25rem 0.5rem';
             seatStatus.style.borderRadius = '4px';
+            seatStatus.style.fontWeight = 'bold';
             hiddenSeatInput.value = passenger.seatId;
             passengerElement.classList.add('has_seat');
         } else {
@@ -183,6 +214,7 @@ function updatePassengerDisplay(passengerId) {
             seatStatus.style.color = '';
             seatStatus.style.padding = '';
             seatStatus.style.borderRadius = '';
+            seatStatus.style.fontWeight = '';
             hiddenSeatInput.value = '';
             passengerElement.classList.remove('has_seat');
         }
@@ -247,7 +279,9 @@ function updateBookingButton() {
         bookButton.textContent = `Select Seats for All Passengers (${selectedSeats.size}/${passengers.length})`;
     } else {
         bookButton.disabled = false;
-        bookButton.textContent = `Book ${passengers.length} Seat${passengers.length > 1 ? 's' : ''} - LKR ${(passengers.length * basePricePerSeat).toLocaleString()}`;
+        // Show simple seat numbers in confirmation button
+        const seatNumbers = passengers.map(p => p.seatNumber).join(', ');
+        bookButton.textContent = `Book ${passengers.length} Seat${passengers.length > 1 ? 's' : ''} (${seatNumbers}) - LKR ${(passengers.length * basePricePerSeat).toLocaleString()}`;
     }
 }
 
@@ -318,9 +352,10 @@ function setupFormValidation() {
             return false;
         }
         
-        // Show confirmation
+        // Show confirmation with simple seat numbers
         const totalAmount = passengers.length * basePricePerSeat;
-        const confirmMessage = `Confirm booking for ${passengers.length} passenger(s)?\n\nTotal Amount: LKR ${totalAmount.toLocaleString()}\n\nSeats: ${passengers.map(p => p.seatNumber).join(', ')}`;
+        const seatList = passengers.map(p => `${p.name}: Seat ${p.seatNumber}`).join('\n');
+        const confirmMessage = `Confirm booking for ${passengers.length} passenger(s)?\n\nTotal Amount: LKR ${totalAmount.toLocaleString()}\n\nPassengers & Seats:\n${seatList}`;
         
         if (!confirm(confirmMessage)) {
             e.preventDefault();
