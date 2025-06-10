@@ -1,6 +1,4 @@
 <?php
-// Passenger Dashboard - FIXED VERSION
-// Save this as: passenger/dashboard.php
 
 session_start();
 require_once '../db_connection.php';
@@ -49,7 +47,25 @@ try {
     $stmt->execute([$user_id]);
     $completed_trips = $stmt->fetch()['completed_trips'] ?? 0;
     
-    // Get total spent
+    // Get cancelled bookings (pending refund) - for tab count only
+    $stmt = $pdo->prepare("
+        SELECT COUNT(*) as cancelled_bookings 
+        FROM bookings 
+        WHERE passenger_id = ? AND booking_status = 'cancelled'
+    ");
+    $stmt->execute([$user_id]);
+    $cancelled_bookings = $stmt->fetch()['cancelled_bookings'] ?? 0;
+    
+    // Get refunded bookings - for tab display only
+    $stmt = $pdo->prepare("
+        SELECT COUNT(*) as refunded_bookings 
+        FROM bookings 
+        WHERE passenger_id = ? AND booking_status = 'refunded'
+    ");
+    $stmt->execute([$user_id]);
+    $refunded_bookings = $stmt->fetch()['refunded_bookings'] ?? 0;
+    
+    // Get total spent (only confirmed/completed bookings)
     $stmt = $pdo->prepare("
         SELECT SUM(total_amount) as total_spent 
         FROM bookings 
@@ -59,33 +75,97 @@ try {
     $stmt->execute([$user_id]);
     $total_spent = $stmt->fetch()['total_spent'] ?? 0;
     
-    // Get recent bookings (last 5)
+    // Get recent bookings (last 5 active ones)
     $stmt = $pdo->prepare("
         SELECT 
             b.booking_reference, b.passenger_name, b.travel_date, b.booking_status, b.total_amount,
             s.departure_time, s.arrival_time,
             r.route_name, r.origin, r.destination,
             seat.seat_number,
-            bus.bus_name, bus.bus_number
+            bus.bus_id, bus.bus_name, bus.bus_number
         FROM bookings b
         JOIN schedules s ON b.schedule_id = s.schedule_id
         JOIN routes r ON s.route_id = r.route_id
         JOIN seats seat ON b.seat_id = seat.seat_id
         JOIN buses bus ON s.bus_id = bus.bus_id
-        WHERE b.passenger_id = ?
+        WHERE b.passenger_id = ? AND b.booking_status IN ('pending', 'confirmed', 'completed')
         ORDER BY b.booking_date DESC
         LIMIT 5
     ");
     $stmt->execute([$user_id]);
-    $recent_bookings = $stmt->fetchAll();
+    $recent_bookings_raw = $stmt->fetchAll();
+    
+    // Convert seat numbers to horizontal layout for recent bookings too
+    $recent_bookings = [];
+    foreach ($recent_bookings_raw as $booking) {
+        $booking['horizontal_seat_number'] = getHorizontalSeatNumber($booking['seat_number'], $booking['bus_id'], $pdo);
+        $recent_bookings[] = $booking;
+    }
+    
+    // Get refund history
+    $stmt = $pdo->prepare("
+        SELECT 
+            b.booking_reference, b.passenger_name, b.travel_date, b.total_amount,
+            b.booking_date, b.updated_at,
+            s.departure_time,
+            r.route_name, r.origin, r.destination,
+            seat.seat_number,
+            bus.bus_id, bus.bus_name, bus.bus_number,
+            CASE 
+                WHEN b.booking_status = 'cancelled' THEN 'Processing'
+                WHEN b.booking_status = 'refunded' THEN 'Completed'
+                ELSE 'Unknown'
+            END as refund_status
+        FROM bookings b
+        JOIN schedules s ON b.schedule_id = s.schedule_id
+        JOIN routes r ON s.route_id = r.route_id
+        JOIN seats seat ON b.seat_id = seat.seat_id
+        JOIN buses bus ON s.bus_id = bus.bus_id
+        WHERE b.passenger_id = ? AND b.booking_status IN ('cancelled', 'refunded')
+        ORDER BY b.updated_at DESC
+    ");
+    $stmt->execute([$user_id]);
+    $refund_history_raw = $stmt->fetchAll();
+    
+    // Convert seat numbers to horizontal layout
+    $refund_history = [];
+    foreach ($refund_history_raw as $refund) {
+        $refund['horizontal_seat_number'] = getHorizontalSeatNumber($refund['seat_number'], $refund['bus_id'], $pdo);
+        $refund_history[] = $refund;
+    }
     
 } catch (PDOException $e) {
     $error = "Error loading dashboard data: " . $e->getMessage();
-    $total_bookings = 0;
-    $upcoming_trips = 0;
-    $completed_trips = 0;
-    $total_spent = 0;
-    $recent_bookings = [];
+}
+
+// Function to convert database seat number to horizontal visual layout number
+function getHorizontalSeatNumber($seatNumber, $busId, $pdo) {
+    try {
+        // Get bus seat configuration
+        $stmt = $pdo->prepare("SELECT seat_configuration FROM buses WHERE bus_id = ?");
+        $stmt->execute([$busId]);
+        $seatConfig = $stmt->fetch()['seat_configuration'] ?? '2x2';
+        
+        // Parse configuration
+        $config = explode('x', $seatConfig);
+        $leftSeats = (int)$config[0];
+        $rightSeats = (int)$config[1];
+        $seatsPerRow = $leftSeats + $rightSeats;
+        
+        // Get all seats for this bus ordered by seat_number
+        $stmt = $pdo->prepare("SELECT seat_number FROM seats WHERE bus_id = ? ORDER BY seat_number ASC");
+        $stmt->execute([$busId]);
+        $allSeats = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        $seatLetter = substr($seatNumber, 0, 1);
+        $seatRowNum = (int)substr($seatNumber, 1);
+        $positionInRow = ord($seatLetter) - ord('A');
+        $horizontalNumber = (($seatRowNum - 1) * $seatsPerRow) + $positionInRow + 1;
+        
+        return $horizontalNumber;
+    } catch (PDOException $e) {
+        return $seatNumber;
+    }
 }
 ?>
 
@@ -128,7 +208,7 @@ try {
             </div>
         <?php endif; ?>
 
-        <!-- Statistics Cards -->
+        <!-- Clean Statistics Cards -->
         <div class="dashboard_grid">
             <div class="stat_card">
                 <div class="stat_number"><?php echo $total_bookings; ?></div>
@@ -151,62 +231,103 @@ try {
             </div>
         </div>
 
-        <!-- Two Column Layout -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin: 2rem 0;">
-            
-            <!-- Recent Bookings -->
-            <div class="table_container">
-                <h3 class="p_1 mb_1">Recent Bookings</h3>
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Booking ID</th>
-                            <th>Route</th>
-                            <th>Date & Time</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (!empty($recent_bookings)): ?>
-                            <?php foreach ($recent_bookings as $booking): ?>
+        <!-- Tab Navigation -->
+        <div style="border-bottom: 2px solid #eee; margin: 2rem 0;">
+            <div style="display: flex; gap: 2rem;">
+                <button class="tab_btn active" onclick="showTab('overview')" id="overview-tab">
+                    Overview
+                </button>
+                <button class="tab_btn" onclick="showTab('profile')" id="profile-tab">
+                    Profile
+                </button>
+                <button class="tab_btn" onclick="showTab('refunds')" id="refunds-tab">
+                    Refund History (<?php echo count($refund_history); ?>)
+                </button>
+            </div>
+        </div>
+
+        <!-- Overview Tab -->
+        <div id="overview-content" class="tab_content active">
+            <!-- Two Column Layout -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin: 2rem 0;">
+                
+                <!-- Recent Bookings -->
+                <div class="table_container">
+                    <h3 class="p_1 mb_1">Recent Bookings</h3>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Booking ID</th>
+                                <th>Route</th>
+                                <th>Date & Time</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (!empty($recent_bookings)): ?>
+                                <?php foreach ($recent_bookings as $booking): ?>
+                                    <tr>
+                                        <td>
+                                            <strong><?php echo htmlspecialchars($booking['booking_reference']); ?></strong><br>
+                                            <small>Seat: <?php echo $booking['horizontal_seat_number']; ?></small>
+                                        </td>
+                                        <td>
+                                            <strong><?php echo htmlspecialchars($booking['origin']); ?> → <?php echo htmlspecialchars($booking['destination']); ?></strong><br>
+                                            <small><?php echo htmlspecialchars($booking['bus_name']); ?> (<?php echo htmlspecialchars($booking['bus_number']); ?>)</small>
+                                        </td>
+                                        <td>
+                                            <?php echo date('M j, Y', strtotime($booking['travel_date'])); ?><br>
+                                            <small><?php echo date('g:i A', strtotime($booking['departure_time'])); ?></small>
+                                        </td>
+                                        <td>
+                                            <span class="badge badge_<?php echo $booking['booking_status'] === 'confirmed' ? 'active' : ($booking['booking_status'] === 'pending' ? 'operator' : 'inactive'); ?>">
+                                                <?php echo ucfirst($booking['booking_status']); ?>
+                                            </span>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php else: ?>
                                 <tr>
-                                    <td>
-                                        <strong><?php echo htmlspecialchars($booking['booking_reference']); ?></strong><br>
-                                        <small>Seat: <?php echo htmlspecialchars($booking['seat_number']); ?></small>
-                                    </td>
-                                    <td>
-                                        <strong><?php echo htmlspecialchars($booking['origin']); ?> → <?php echo htmlspecialchars($booking['destination']); ?></strong><br>
-                                        <small><?php echo htmlspecialchars($booking['bus_name']); ?> (<?php echo htmlspecialchars($booking['bus_number']); ?>)</small>
-                                    </td>
-                                    <td>
-                                        <?php echo date('M j, Y', strtotime($booking['travel_date'])); ?><br>
-                                        <small><?php echo date('g:i A', strtotime($booking['departure_time'])); ?></small>
-                                    </td>
-                                    <td>
-                                        <span class="badge badge_<?php echo $booking['booking_status'] === 'confirmed' ? 'active' : ($booking['booking_status'] === 'pending' ? 'operator' : 'inactive'); ?>">
-                                            <?php echo ucfirst($booking['booking_status']); ?>
-                                        </span>
+                                    <td colspan="4" class="text_center" style="color: #666;">
+                                        No bookings found. <a href="../search_buses.php">Book your first trip!</a>
                                     </td>
                                 </tr>
-                            <?php endforeach; ?>
-                        <?php else: ?>
-                            <tr>
-                                <td colspan="4" class="text_center" style="color: #666;">
-                                    No bookings found. <a href="../search_buses.php">Book your first trip!</a>
-                                </td>
-                            </tr>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-                
-                <?php if (!empty($recent_bookings)): ?>
-                    <div class="p_1">
-                        <a href="../my_bookings.php" class="btn btn_primary">View All Bookings</a>
-                    </div>
-                <?php endif; ?>
-            </div>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                    
+                    <?php if (!empty($recent_bookings)): ?>
+                        <div class="p_1">
+                            <a href="../my_bookings.php" class="btn btn_primary">View All Bookings</a>
+                        </div>
+                    <?php endif; ?>
+                </div>
 
-            <!-- Profile Information -->
+                <!-- Quick Actions -->
+                <div class="table_container">
+                    <h3 class="p_1 mb_1">Quick Actions</h3>
+                    <div class="p_2">
+                        <div style="display: grid; gap: 1rem;">
+                            <button class="btn btn_primary" onclick="window.location.href='../search_buses.php'" style="width: 100%;">
+                                🔍 Search & Book Buses
+                            </button>
+                            <button class="btn btn_primary" onclick="window.location.href='../my_bookings.php'" style="width: 100%;">
+                                🎫 View My Bookings
+                            </button>
+                            <button class="btn btn_success" onclick="alert('Parcel service feature coming soon!')" style="width: 100%;">
+                                📦 Send Parcel
+                            </button>
+                            <button class="btn btn_primary" onclick="alert('Review system feature coming soon!')" style="width: 100%;">
+                                ⭐ My Reviews
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Profile Tab -->
+        <div id="profile-content" class="tab_content">
             <div class="table_container">
                 <h3 class="p_1 mb_1">Profile Information</h3>
                 <?php if ($passenger_info): ?>
@@ -233,49 +354,92 @@ try {
                         </tr>
                     </table>
                     <div class="p_1">
-                        <button class="btn btn_primary" onclick="alert('Profile editing feature coming soon!')">Edit Profile</button>
+                        <a href="edit_profile.php" class="btn btn_primary">Edit Profile</a>
                     </div>
                 <?php endif; ?>
             </div>
         </div>
 
-        <!-- Quick Actions -->
-        <div class="features_grid">
-            <div class="feature_card">
-                <h4>🔍 Search Buses</h4>
-                <p>Find and book bus tickets for your next journey. Choose from various routes and operators.</p>
-                <button class="btn btn_primary" onclick="window.location.href='../search_buses.php'">Search Buses</button>
-            </div>
+        <!-- Refund History Tab -->
+        <div id="refunds-content" class="tab_content">
+            <h3 class="mb_1">Refund History</h3>
             
-            <div class="feature_card">
-                <h4>🎫 My Bookings</h4>
-                <p>View, manage, and track all your current and past bookings. Download tickets and get updates.</p>
-                <button class="btn btn_primary" onclick="window.location.href='../my_bookings.php'">View Bookings</button>
-            </div>
-            
-            <div class="feature_card">
-                <h4>📦 Send Parcel</h4>
-                <p>Send parcels through our integrated delivery service along with passenger routes.</p>
-                <button class="btn btn_success" onclick="alert('Parcel service feature coming soon!')">Send Parcel</button>
-            </div>
-            
-            <div class="feature_card">
-                <h4>⭐ Reviews</h4>
-                <p>Rate and review your travel experiences. Help other passengers make informed choices.</p>
-                <button class="btn btn_primary" onclick="alert('Review system feature coming soon!')">My Reviews</button>
-            </div>
-            
-            <div class="feature_card">
-                <h4>💳 Payment History</h4>
-                <p>View your payment history, download receipts, and manage payment methods.</p>
-                <button class="btn btn_primary" onclick="alert('Payment history feature coming soon!')">Payment History</button>
-            </div>
-            
-            <div class="feature_card">
-                <h4>🆘 Support</h4>
-                <p>Need help? Contact our customer support team for assistance with bookings or account issues.</p>
-                <button class="btn btn_success" onclick="alert('Support: Call +94 11 123 4567 or Email: support@roadrunner.lk')">Get Help</button>
-            </div>
+            <?php if (empty($refund_history)): ?>
+                <div class="alert alert_info">
+                    <h4>No Refund History</h4>
+                    <p>You haven't cancelled any bookings yet. Your cancelled bookings and refund status will appear here.</p>
+                </div>
+            <?php else: ?>
+                <div class="table_container">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Booking Details</th>
+                                <th>Trip Information</th>
+                                <th>Amount</th>
+                                <th>Refund Status</th>
+                                <th>Date</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($refund_history as $refund): ?>
+                                <tr>
+                                    <td>
+                                        <strong><?php echo htmlspecialchars($refund['booking_reference']); ?></strong><br>
+                                        <small>Passenger: <?php echo htmlspecialchars($refund['passenger_name']); ?></small><br>
+                                        <small>Seat: <?php echo $refund['horizontal_seat_number']; ?></small>
+                                    </td>
+                                    <td>
+                                        <strong><?php echo htmlspecialchars($refund['route_name']); ?></strong><br>
+                                        <small><?php echo htmlspecialchars($refund['origin']); ?> → <?php echo htmlspecialchars($refund['destination']); ?></small><br>
+                                        <small><?php echo date('M j, Y g:i A', strtotime($refund['travel_date'] . ' ' . $refund['departure_time'])); ?></small><br>
+                                        <small>Bus: <?php echo htmlspecialchars($refund['bus_name']); ?> (<?php echo htmlspecialchars($refund['bus_number']); ?>)</small>
+                                    </td>
+                                    <td>
+                                        <strong style="color: #e74c3c;">LKR <?php echo number_format($refund['total_amount']); ?></strong>
+                                    </td>
+                                    <td>
+                                        <?php if ($refund['refund_status'] === 'Processing'): ?>
+                                            <span class="badge badge_operator">Processing</span><br>
+                                            <small style="color: #666; margin-top: 0.25rem; display: block;">
+                                                Expected: 3-5 business days
+                                            </small>
+                                        <?php else: ?>
+                                            <span class="badge badge_active">Completed</span><br>
+                                            <small style="color: #27ae60; margin-top: 0.25rem; display: block;">
+                                                Refund processed
+                                            </small>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <strong>Cancelled:</strong><br>
+                                        <?php echo date('M j, Y', strtotime($refund['booking_date'])); ?><br>
+                                        <small><?php echo date('g:i A', strtotime($refund['booking_date'])); ?></small>
+                                        
+                                        <?php if ($refund['refund_status'] === 'Completed'): ?>
+                                            <br><br><strong>Refunded:</strong><br>
+                                            <?php echo date('M j, Y', strtotime($refund['updated_at'])); ?><br>
+                                            <small><?php echo date('g:i A', strtotime($refund['updated_at'])); ?></small>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Refund Summary -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 2rem;">
+                    <div class="stat_card">
+                        <div class="stat_number"><?php echo $cancelled_bookings; ?></div>
+                        <div class="stat_label">Pending Refunds</div>
+                    </div>
+                    <div class="stat_card">
+                        <div class="stat_number"><?php echo $refunded_bookings; ?></div>
+                        <div class="stat_label">Completed Refunds</div>
+                    </div>
+                </div>
+            <?php endif; ?>
         </div>
 
         <!-- Travel Tips -->
@@ -295,8 +459,8 @@ try {
                     Arrive at the departure point at least 15 minutes before scheduled departure time.
                 </div>
                 <div>
-                    <strong>📞 Stay Updated:</strong><br>
-                    Check for any schedule changes or updates via SMS or email notifications.
+                    <strong>💰 Refund Policy:</strong><br>
+                    Free cancellation up to 2 hours before departure. Refunds processed within 3-5 business days.
                 </div>
             </div>
         </div>
@@ -308,5 +472,21 @@ try {
             <p>&copy; 2025 Road Runner. Safe travels!</p>
         </div>
     </footer>
+
+    <script>
+        function showTab(tabName) {
+            // Hide all tab contents
+            const contents = document.querySelectorAll('.tab_content');
+            contents.forEach(content => content.classList.remove('active'));
+            
+            // Remove active class from all tab buttons
+            const buttons = document.querySelectorAll('.tab_btn');
+            buttons.forEach(button => button.classList.remove('active'));
+            
+            // Show selected tab content
+            document.getElementById(tabName + '-content').classList.add('active');
+            document.getElementById(tabName + '-tab').classList.add('active');
+        }
+    </script>
 </body>
 </html>
