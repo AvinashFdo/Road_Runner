@@ -1,0 +1,774 @@
+/* Road Runner - Main Stylesheet */
+/* Save this as: assets/css/style.css */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    line-height: 1.6;
+    color: #333;
+}
+
+.header {
+    background: #2c3e50;
+    color: white;
+    padding: 1rem 0;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+.nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.logo {
+    font-size: 1.8rem;
+    font-weight: bold;
+}
+
+.nav_links {
+    display: flex;
+    list-style: none;
+    gap: 2rem;
+}
+
+.nav_links a {
+    color: white;
+    text-decoration: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    transition: background 0.3s;
+}
+
+.nav_links a:hover {
+    background: #34495e;
+}
+
+.hero {
+    background: linear-gradient(135deg, #3498db, #2980b9);
+    color: white;
+    text-align: center;
+    padding: 4rem 0;
+}
+
+.hero h1 {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
+.hero p {
+    font-size: 1.2rem;
+    margin-bottom: 2rem;
+}
+
+.btn {
+    display: inline-block;
+    padding: 12px 24px;
+    background: #e74c3c;
+    color: white;
+    text-decoration: none;
+    border-radius: 5px;
+    transition: background 0.3s;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+.btn:hover {
+    background: #c0392b;
+}
+
+.btn_primary {
+    background: #3498db;
+}
+
+.btn_primary:hover {
+    background: #2980b9;
+}
+
+.btn_success {
+    background: #27ae60;
+}
+
+.btn_success:hover {
+    background: #219a52;
+}
+
+.features {
+    padding: 4rem 0;
+    background: #f8f9fa;
+}
+
+.features_grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2rem;
+    margin-top: 2rem;
+}
+
+.feature_card {
+    background: white;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    text-align: center;
+}
+
+.feature_icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
+.footer {
+    background: #2c3e50;
+    color: white;
+    text-align: center;
+    padding: 2rem 0;
+}
+
+.user_info {
+    background: #27ae60;
+    padding: 10px 15px;
+    border-radius: 5px;
+    font-size: 0.9rem;
+}
+
+/* Form Styles */
+.form_container {
+    max-width: 500px;
+    margin: 2rem auto;
+    padding: 2rem;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.form_group {
+    margin-bottom: 1rem;
+}
+
+.form_group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: bold;
+}
+
+.form_control {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 1rem;
+}
+
+.form_control:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 5px rgba(52, 152, 219, 0.3);
+}
+
+.error {
+    color: #e74c3c;
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+}
+
+.success {
+    color: #27ae60;
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+}
+
+.alert {
+    padding: 12px;
+    margin-bottom: 1rem;
+    border-radius: 4px;
+}
+
+.alert_error {
+    background: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+}
+
+.alert_success {
+    background: #d4edda;
+    border: 1px solid #c3e6cb;
+    color: #155724;
+}
+
+.alert_info {
+    background: #d1ecf1;
+    border: 1px solid #bee5eb;
+    color: #0c5460;
+}
+
+/* Dashboard Styles */
+.dashboard_grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    margin: 2rem 0;
+}
+
+.stat_card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    text-align: center;
+}
+
+.stat_number {
+    font-size: 2.5rem;
+    font-weight: bold;
+    color: #3498db;
+    margin-bottom: 0.5rem;
+}
+
+.stat_label {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.admin_nav, .operator_nav {
+    background: #34495e;
+    padding: 1rem 0;
+    margin-bottom: 2rem;
+}
+
+.admin_nav_links, .operator_nav_links {
+    display: flex;
+    gap: 2rem;
+    flex-wrap: wrap;
+}
+
+.admin_nav_links a, .operator_nav_links a {
+    color: white;
+    text-decoration: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    transition: background 0.3s;
+}
+
+.admin_nav_links a:hover, .operator_nav_links a:hover {
+    background: #2c3e50;
+}
+
+.table_container {
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.table th,
+.table td {
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+}
+
+.table th {
+    background: #f8f9fa;
+    font-weight: bold;
+}
+
+/* Badge Styles */
+.badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+
+.badge_admin {
+    background: #e74c3c;
+    color: white;
+}
+
+.badge_operator {
+    background: #f39c12;
+    color: white;
+}
+
+.badge_passenger {
+    background: #27ae60;
+    color: white;
+}
+
+.badge_active {
+    background: #27ae60;
+    color: white;
+}
+
+.badge_inactive {
+    background: #95a5a6;
+    color: white;
+}
+
+.badge_nonac {
+    background: #3498db;
+    color: white;
+}
+
+.badge_ac {
+    background: #9b59b6;
+    color: white;
+}
+
+.badge_semiluxury {
+    background: #f39c12;
+    color: white;
+}
+
+.badge_luxury {
+    background: #e74c3c;
+    color: white;
+}
+
+.badge_male {
+    background: #1976d2;
+    color: white;
+}
+
+.badge_female {
+    background: #c2185b;
+    color: white;
+}
+
+/* Seat Selection Styles */
+.seat_selection_container {
+    display: grid;
+    grid-template-columns: 1fr 400px;
+    gap: 2rem;
+    margin: 2rem 0;
+}
+
+.bus_layout {
+    background: white;
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    max-width: 600px;
+}
+
+.bus_header {
+    text-align: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid #eee;
+}
+
+.driver_area {
+    background: #34495e;
+    color: white;
+    padding: 0.5rem;
+    text-align: center;
+    border-radius: 8px 8px 0 0;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+}
+
+.seat_row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 0.8rem;
+    gap: 1rem;
+}
+
+.seat_group_left,
+.seat_group_right {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.aisle {
+    width: 40px;
+    text-align: center;
+    color: #999;
+    font-size: 0.8rem;
+}
+
+.seat {
+    width: 45px;
+    height: 45px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: bold;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.seat:hover {
+    transform: scale(1.1);
+}
+
+/* Available seats - gender-based colors */
+.seat.available.male {
+    background: #e3f2fd;
+    border-color: #2196f3;
+    color: #1976d2;
+}
+
+.seat.available.female {
+    background: #fce4ec;
+    border-color: #e91e63;
+    color: #c2185b;
+}
+
+.seat.available.neutral {
+    background: #f5f5f5;
+    border-color: #999;
+    color: #666;
+}
+
+/* Booked seats - show passenger gender */
+.seat.booked.male {
+    background: #1976d2;
+    border-color: #1976d2;
+    color: white;
+    cursor: not-allowed;
+}
+
+.seat.booked.female {
+    background: #c2185b;
+    border-color: #c2185b;
+    color: white;
+    cursor: not-allowed;
+}
+
+/* Selected seat */
+.seat.selected {
+    background: #4caf50 !important;
+    border-color: #4caf50 !important;
+    color: white !important;
+    box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+}
+
+.seat_legend {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0;
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.legend_item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.legend_seat {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    border: 2px solid;
+}
+
+.booking_form {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    height: fit-content;
+    position: sticky;
+    top: 1rem;
+}
+
+.passengers_container {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #eee;
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 1rem 0;
+    background: #fafafa;
+}
+
+.passenger_form {
+    background: white;
+    border: 2px solid #eee;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    position: relative;
+    transition: border-color 0.3s ease;
+}
+
+.passenger_form.has_seat {
+    border-color: #4caf50;
+    background: #f8fff8;
+}
+
+.passenger_header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.passenger_number {
+    font-weight: bold;
+    color: #666;
+}
+
+.remove_passenger {
+    background: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.remove_passenger:hover {
+    background: #c0392b;
+}
+
+.seat_indicator {
+    background: #4caf50;
+    color: white;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    margin-left: 0.5rem;
+}
+
+.add_passenger_btn {
+    background: #2196f3;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    width: 100%;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+    transition: background 0.3s ease;
+}
+
+.add_passenger_btn:hover {
+    background: #1976d2;
+}
+
+.gender_color_indicator {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+}
+
+/* My Bookings Specific Styles */
+.passenger-list {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 1rem 0;
+}
+
+.passenger-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #eee;
+}
+
+.passenger-item:last-child {
+    border-bottom: none;
+}
+
+.passenger-details {
+    flex: 1;
+}
+
+.passenger-meta {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    font-size: 0.9rem;
+}
+
+.booking-group {
+    background: white;
+    border-radius: 12px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    border: 1px solid #eee;
+}
+
+.trip-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid #eee;
+}
+
+.trip-title {
+    flex: 1;
+}
+
+.trip-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: flex-end;
+}
+
+.booking-refs {
+    font-size: 0.8rem;
+    color: #666;
+    margin-top: 0.5rem;
+}
+
+.total-summary {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-top: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: bold;
+}
+
+/* Tab Navigation Styles */
+.tab_btn {
+    background: none;
+    border: none;
+    padding: 1rem 1.5rem;
+    cursor: pointer;
+    font-size: 1rem;
+    color: #666;
+    border-bottom: 3px solid transparent;
+    transition: all 0.3s ease;
+}
+
+.tab_btn.active {
+    color: #2c3e50;
+    border-bottom-color: #3498db;
+    font-weight: bold;
+}
+
+.tab_btn:hover {
+    color: #2c3e50;
+    background: #f8f9fa;
+}
+
+.tab_content {
+    display: none;
+}
+
+.tab_content.active {
+    display: block;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .nav {
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .nav_links {
+        gap: 1rem;
+    }
+    
+    .hero h1 {
+        font-size: 2rem;
+    }
+    
+    .form_container {
+        margin: 1rem;
+        padding: 1rem;
+    }
+    
+    .seat_selection_container {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+    
+    .seat {
+        width: 35px;
+        height: 35px;
+        font-size: 0.7rem;
+    }
+    
+    .booking_form {
+        position: static;
+    }
+    
+    .trip-header {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: stretch;
+    }
+    
+    .trip-actions {
+        align-items: center;
+        flex-direction: row;
+        justify-content: center;
+        gap: 1rem;
+    }
+    
+    .passenger-meta {
+        flex-direction: column;
+        gap: 0.5rem;
+        align-items: flex-start;
+    }
+    
+    .booking-group {
+        padding: 1rem;
+    }
+}
+
+/* Utility Classes */
+.text_center {
+    text-align: center;
+}
+
+.mt_1 { margin-top: 1rem; }
+.mt_2 { margin-top: 2rem; }
+.mb_1 { margin-bottom: 1rem; }
+.mb_2 { margin-bottom: 2rem; }
+.p_1 { padding: 1rem; }
+.p_2 { padding: 2rem; }
