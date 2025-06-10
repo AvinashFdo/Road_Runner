@@ -1,6 +1,4 @@
 <?php
-// Operator Schedule Management
-// Save this as: operator/schedules.php
 
 session_start();
 require_once '../db_connection.php';
