@@ -1,6 +1,4 @@
 <?php
-// Booking Confirmation System - UPDATED with Horizontal Seat Numbers
-// Save this as: booking_confirmation.php
 
 session_start();
 require_once 'db_connection.php';
@@ -25,36 +23,26 @@ function getHorizontalSeatNumber($seatNumber, $busId, $pdo) {
         $stmt = $pdo->prepare("SELECT seat_configuration FROM buses WHERE bus_id = ?");
         $stmt->execute([$busId]);
         $seatConfig = $stmt->fetch()['seat_configuration'] ?? '2x2';
-        
-        // Parse configuration (e.g., "2x2" means 2 left + 2 right = 4 seats per row)
+
         $config = explode('x', $seatConfig);
         $leftSeats = (int)$config[0];
         $rightSeats = (int)$config[1];
         $seatsPerRow = $leftSeats + $rightSeats;
-        
-        // Get all seats for this bus ordered by seat_number (alphabetical)
+
         $stmt = $pdo->prepare("SELECT seat_number FROM seats WHERE bus_id = ? ORDER BY seat_number ASC");
         $stmt->execute([$busId]);
         $allSeats = $stmt->fetchAll(PDO::FETCH_COLUMN);
         
-        // Find the position of this seat in the alphabetical list
         $alphabeticalPosition = array_search($seatNumber, $allSeats);
         if ($alphabeticalPosition === false) {
-            return $seatNumber; // Return original if not found
+            return $seatNumber; 
         }
         
-        // Convert alphabetical position to row-based position
-        // Alphabetical: A01, A02, A03, B01, B02, B03, C01, C02, C03...
-        // Visual: Row 1 (A01,B01,C01), Row 2 (A02,B02,C02), Row 3 (A03,B03,C03)...
-        
         $totalRows = count($allSeats) / $seatsPerRow;
-        $seatLetter = substr($seatNumber, 0, 1); // A, B, C, etc.
-        $seatRowNum = (int)substr($seatNumber, 1); // 01, 02, 03, etc.
-        
-        // Calculate position within row (A=0, B=1, C=2, etc.)
+        $seatLetter = substr($seatNumber, 0, 1); 
+        $seatRowNum = (int)substr($seatNumber, 1); 
         $positionInRow = ord($seatLetter) - ord('A');
         
-        // Calculate horizontal seat number: (row - 1) * seats_per_row + position_in_row + 1
         $horizontalNumber = (($seatRowNum - 1) * $seatsPerRow) + $positionInRow + 1;
         
         return $horizontalNumber;
@@ -119,7 +107,7 @@ try {
 
 // Generate simple PDF ticket using basic PDF structure
 function generateSimplePDFTicket($bookings, $bus_info) {
-    // Create a simple text-based content that will be formatted nicely
+    
     $content = "ROAD RUNNER - BUS TICKETS\n\n";
     $content .= "=====================================\n";
     $content .= "TRIP INFORMATION\n";
