@@ -1,6 +1,4 @@
 <?php
-// Gender-Based Seat Selection System with Simple Seat Numbers
-// Save this as: seat_selection.php
 
 session_start();
 require_once 'db_connection.php';
@@ -52,7 +50,7 @@ try {
         exit();
     }
     
-    // Get all seats for this bus with booking information
+    // Get all seats with booking information
     $stmt = $pdo->prepare("
         SELECT 
             s.seat_id, s.seat_number, s.seat_type,
@@ -60,7 +58,7 @@ try {
         FROM seats s
         LEFT JOIN bookings b ON s.seat_id = b.seat_id 
             AND b.travel_date = ? 
-            AND b.booking_status IN ('pending', 'confirmed')
+            AND b.booking_status IN ('pending', 'confirmed', 'cancelled')
         WHERE s.bus_id = ?
         ORDER BY s.seat_number ASC
     ");
@@ -148,14 +146,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
                 // Begin transaction
                 $pdo->beginTransaction();
                 
-                // Clean up any cancelled bookings that might conflict
-                $stmt = $pdo->prepare("DELETE FROM bookings WHERE booking_status = 'cancelled' AND travel_date = ?");
-                $stmt->execute([$travel_date]);
-                
                 $booking_references = [];
                 $total_amount = count($passengers_data) * $bus_info['base_price'];
-                
-                // Check if all seats are still available (with retry logic)
+
                 $max_retries = 3;
                 $retry_count = 0;
                 
@@ -164,12 +157,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
                     
                     foreach ($selected_seats as $seat_id) {
                         $stmt = $pdo->prepare("
-                            SELECT booking_id FROM bookings 
-                            WHERE seat_id = ? AND travel_date = ? AND booking_status IN ('pending', 'confirmed')
+                            SELECT booking_id, booking_status FROM bookings 
+                            WHERE seat_id = ? AND travel_date = ? 
+                            AND booking_status IN ('pending', 'confirmed', 'cancelled')
                         ");
                         $stmt->execute([$seat_id, $travel_date]);
-                        if ($stmt->fetch()) {
+                        $conflict = $stmt->fetch();
+                        
+                        if ($conflict) {
                             $conflicting_seats[] = $seat_id;
+                            // Show helpful message based on booking status
+                            if ($conflict['booking_status'] === 'cancelled') {
+                                $error = "This seat is currently unavailable (refund processing). Please select a different seat.";
+                            }
                         }
                     }
                     
@@ -179,7 +179,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
                     
                     $retry_count++;
                     if ($retry_count >= $max_retries) {
-                        throw new Exception("One or more selected seats have been booked by other passengers. Please refresh the page and select different seats.");
+                        if (empty($error)) {
+                            $error = "One or more selected seats are no longer available. Please refresh the page and select different seats.";
+                        }
+                        throw new Exception($error);
                     }
                     
                     // Small delay before retry
@@ -202,7 +205,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
                         }
                     } while ($stmt->fetch());
                     
-                    // Create booking using account holder's phone number
+                    // Create booking - much simpler now!
                     $stmt = $pdo->prepare("
                         INSERT INTO bookings 
                         (booking_reference, passenger_id, schedule_id, seat_id, passenger_name, passenger_phone, passenger_gender, travel_date, total_amount, booking_status, payment_status) 
@@ -214,7 +217,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
                         $schedule_id,
                         $passenger['seat_id'],
                         $passenger['name'],
-                        $user_phone, // Use account holder's phone for all bookings
+                        $user_phone,
                         $passenger['gender'],
                         $travel_date,
                         $bus_info['base_price']
@@ -338,7 +341,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
                                                     data-seat-id="<?php echo $seat['seat_id']; ?>"
                                                     data-seat-number="<?php echo htmlspecialchars($seat['seat_number']); ?>"
                                                     data-seat-type="<?php echo htmlspecialchars($seat['seat_type']); ?>"
-                                                    <?php echo $seat['booking_id'] ? 'data-booked="true" title="This seat is already booked"' : 'onclick="selectSeat(this)" title="Click to select seat ' . $seat_counter . '"'; ?>
+                                                    <?php 
+                                                    if ($seat['booking_id']) {
+                                                        $tooltip = $seat['booking_status'] === 'cancelled' ? 
+                                                            'This seat is unavailable (refund processing)' : 
+                                                            'This seat is already booked';
+                                                        echo 'data-booked="true" title="' . $tooltip . '"';
+                                                    } else {
+                                                        echo 'onclick="selectSeat(this)" title="Click to select seat ' . $seat_counter . '"';
+                                                    }
+                                                    ?>
                                                 >
                                                     <?php echo $seat_counter++; ?>
                                                 </div>
@@ -361,7 +373,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
                                                     data-seat-id="<?php echo $seat['seat_id']; ?>"
                                                     data-seat-number="<?php echo htmlspecialchars($seat['seat_number']); ?>"
                                                     data-seat-type="<?php echo htmlspecialchars($seat['seat_type']); ?>"
-                                                    <?php echo $seat['booking_id'] ? 'data-booked="true" title="This seat is already booked"' : 'onclick="selectSeat(this)" title="Click to select seat ' . $seat_counter . '"'; ?>
+                                                    <?php 
+                                                    if ($seat['booking_id']) {
+                                                        $tooltip = $seat['booking_status'] === 'cancelled' ? 
+                                                            'This seat is unavailable (refund processing)' : 
+                                                            'This seat is already booked';
+                                                        echo 'data-booked="true" title="' . $tooltip . '"';
+                                                    } else {
+                                                        echo 'onclick="selectSeat(this)" title="Click to select seat ' . $seat_counter . '"';
+                                                    }
+                                                    ?>
                                                 >
                                                     <?php echo $seat_counter++; ?>
                                                 </div>
@@ -393,7 +414,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
                         </div>
                     </div>
                     
-                    
+                    <!-- Simple Info -->
+                    <div style="background: #e8f4fd; border-radius: 8px; padding: 1rem; margin-top: 1rem; font-size: 0.9rem; text-align: center;">
+                        <strong>🪑 Seat Numbering:</strong> Seats are numbered 1, 2, 3, 4... from front to back, left to right across each row
+                    </div>
                 </div>
             </div>
             
