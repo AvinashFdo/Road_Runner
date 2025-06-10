@@ -1,6 +1,4 @@
 <?php
-// Operator Dashboard
-// Save this as: operator/dashboard.php
 
 session_start();
 require_once '../db_connection.php';
@@ -30,9 +28,9 @@ try {
     $stmt->execute([$user_id]);
     $active_routes = $stmt->fetch()['schedule_count'];
     
-    // For now, we'll show sample statistics for bookings and revenue
-    $today_bookings = 0; // Will be populated when we add bookings
-    $total_revenue = 0; // Will be populated when we add payment data
+    
+    $today_bookings = 0; 
+    $total_revenue = 0; 
     
     // Get operator info
     $stmt = $pdo->prepare("SELECT full_name, email, phone, created_at FROM users WHERE user_id = ?");
