@@ -1,6 +1,4 @@
 <?php
-// Clean Bus Management System - Built from scratch
-// Save as: operator/buses.php
 
 session_start();
 require_once '../db_connection.php';
