@@ -1,6 +1,3 @@
-// FIXED Seat Selection JavaScript
-// Save this as: assets/js/seat_selection.js
-
 let selectedSeats = new Set();
 let passengers = [];
 let passengerCounter = 0;
