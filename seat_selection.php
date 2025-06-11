@@ -1,6 +1,4 @@
 <?php
-// Clean Seat Selection System - Built from scratch
-// Save as: seat_selection.php
 
 session_start();
 require_once 'db_connection.php';
