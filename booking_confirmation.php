@@ -1,6 +1,4 @@
 <?php
-// Clean Booking Confirmation - Built from scratch
-// Save as: booking_confirmation.php
 
 session_start();
 require_once 'db_connection.php';
