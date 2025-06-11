@@ -1,4 +1,6 @@
 <?php
+// FIXED Gender-Based Seat Selection System
+// Save this as: seat_selection.php
 
 session_start();
 require_once 'db_connection.php';
@@ -50,7 +52,7 @@ try {
         exit();
     }
     
-    // Get all seats with booking information
+    // Get all seats for this bus with booking information
     $stmt = $pdo->prepare("
         SELECT 
             s.seat_id, s.seat_number, s.seat_type,
@@ -58,9 +60,11 @@ try {
         FROM seats s
         LEFT JOIN bookings b ON s.seat_id = b.seat_id 
             AND b.travel_date = ? 
-            AND b.booking_status IN ('pending', 'confirmed', 'cancelled')
+            AND b.booking_status IN ('pending', 'confirmed')
         WHERE s.bus_id = ?
-        ORDER BY s.seat_number ASC
+        ORDER BY 
+            CAST(SUBSTRING(s.seat_number, 2) AS UNSIGNED) ASC,
+            SUBSTRING(s.seat_number, 1, 1) ASC
     ");
     $stmt->execute([$travel_date, $bus_info['bus_id']]);
     $seats = $stmt->fetchAll();
@@ -69,7 +73,8 @@ try {
     $error = "Error loading seat information: " . $e->getMessage();
 }
 
-// Organize seats by rows for display
+// Create proper seat mapping with correct display numbers
+// Organize seats by rows for display (SIMPLE VERSION)
 $seat_map = [];
 if (!empty($seats)) {
     $config = explode('x', $bus_info['seat_configuration']);
@@ -77,9 +82,11 @@ if (!empty($seats)) {
     $right_seats = (int)$config[1];
     $seats_per_row = $left_seats + $right_seats;
     
+    // Since seats are now numbered 1, 2, 3, 4, 5... we can easily calculate rows
     foreach ($seats as $seat) {
-        // Extract row number from seat number (e.g., A01 -> 1, B02 -> 2)
-        $row = (int)substr($seat['seat_number'], 1);
+        $seat_number = (int)$seat['seat_number'];
+        $row = ceil($seat_number / $seats_per_row);
+        
         if (!isset($seat_map[$row])) {
             $seat_map[$row] = [];
         }
@@ -88,6 +95,13 @@ if (!empty($seats)) {
     
     // Sort rows
     ksort($seat_map);
+    
+    // Sort seats within each row
+    foreach ($seat_map as &$row_seats) {
+        usort($row_seats, function($a, $b) {
+            return (int)$a['seat_number'] - (int)$b['seat_number'];
+        });
+    }
 }
 
 // Handle seat booking
@@ -146,9 +160,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
                 // Begin transaction
                 $pdo->beginTransaction();
                 
+                // Clean up any cancelled bookings that might conflict
+                $stmt = $pdo->prepare("DELETE FROM bookings WHERE booking_status = 'cancelled' AND travel_date = ?");
+                $stmt->execute([$travel_date]);
+                
                 $booking_references = [];
                 $total_amount = count($passengers_data) * $bus_info['base_price'];
-
+                
+                // Check if all seats are still available (with retry logic)
                 $max_retries = 3;
                 $retry_count = 0;
                 
@@ -157,19 +176,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
                     
                     foreach ($selected_seats as $seat_id) {
                         $stmt = $pdo->prepare("
-                            SELECT booking_id, booking_status FROM bookings 
-                            WHERE seat_id = ? AND travel_date = ? 
-                            AND booking_status IN ('pending', 'confirmed', 'cancelled')
+                            SELECT booking_id FROM bookings 
+                            WHERE seat_id = ? AND travel_date = ? AND booking_status IN ('pending', 'confirmed')
                         ");
                         $stmt->execute([$seat_id, $travel_date]);
-                        $conflict = $stmt->fetch();
-                        
-                        if ($conflict) {
+                        if ($stmt->fetch()) {
                             $conflicting_seats[] = $seat_id;
-                            // Show helpful message based on booking status
-                            if ($conflict['booking_status'] === 'cancelled') {
-                                $error = "This seat is currently unavailable (refund processing). Please select a different seat.";
-                            }
                         }
                     }
                     
@@ -179,10 +191,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
                     
                     $retry_count++;
                     if ($retry_count >= $max_retries) {
-                        if (empty($error)) {
-                            $error = "One or more selected seats are no longer available. Please refresh the page and select different seats.";
-                        }
-                        throw new Exception($error);
+                        throw new Exception("One or more selected seats have been booked by other passengers. Please refresh the page and select different seats.");
                     }
                     
                     // Small delay before retry
@@ -205,7 +214,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
                         }
                     } while ($stmt->fetch());
                     
-                    // Create booking - much simpler now!
+                    // Create booking using account holder's phone number
                     $stmt = $pdo->prepare("
                         INSERT INTO bookings 
                         (booking_reference, passenger_id, schedule_id, seat_id, passenger_name, passenger_phone, passenger_gender, travel_date, total_amount, booking_status, payment_status) 
@@ -217,7 +226,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
                         $schedule_id,
                         $passenger['seat_id'],
                         $passenger['name'],
-                        $user_phone,
+                        $user_phone, // Use account holder's phone for all bookings
                         $passenger['gender'],
                         $travel_date,
                         $bus_info['base_price']
@@ -303,6 +312,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
                     <?php endif; ?><br>
                     <strong>Price:</strong> LKR <?php echo number_format($bus_info['base_price']); ?>
                 </div>
+                <div>
+                    <strong>Total Seats:</strong> <?php echo $bus_info['total_seats']; ?><br>
+                    <strong>Configuration:</strong> <?php echo $bus_info['seat_configuration']; ?>
+                </div>
             </div>
         </div>
 
@@ -326,71 +339,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
                             $config = explode('x', $bus_info['seat_configuration']);
                             $left_seats = (int)$config[0];
                             $right_seats = (int)$config[1];
-                            $seat_counter = 1; // Simple counter starting from 1
                             ?>
                             
                             <?php foreach ($seat_map as $row_num => $row_seats): ?>
-                                <div class="seat_row">
-                                    <!-- Left side seats -->
-                                    <div class="seat_group_left">
-                                        <?php for ($i = 0; $i < $left_seats; $i++): ?>
-                                            <?php if (isset($row_seats[$i])): ?>
-                                                <?php $seat = $row_seats[$i]; ?>
-                                                <div 
-                                                    class="seat <?php echo $seat['booking_id'] ? 'booked' : 'available'; ?> <?php echo $seat['booking_id'] ? strtolower($seat['passenger_gender'] ?? 'neutral') : 'neutral'; ?>"
-                                                    data-seat-id="<?php echo $seat['seat_id']; ?>"
-                                                    data-seat-number="<?php echo htmlspecialchars($seat['seat_number']); ?>"
-                                                    data-seat-type="<?php echo htmlspecialchars($seat['seat_type']); ?>"
-                                                    <?php 
-                                                    if ($seat['booking_id']) {
-                                                        $tooltip = $seat['booking_status'] === 'cancelled' ? 
-                                                            'This seat is unavailable (refund processing)' : 
-                                                            'This seat is already booked';
-                                                        echo 'data-booked="true" title="' . $tooltip . '"';
-                                                    } else {
-                                                        echo 'onclick="selectSeat(this)" title="Click to select seat ' . $seat_counter . '"';
-                                                    }
-                                                    ?>
-                                                >
-                                                    <?php echo $seat_counter++; ?>
-                                                </div>
-                                            <?php endif; ?>
-                                        <?php endfor; ?>
-                                    </div>
-                                    
-                                    <!-- Aisle -->
-                                    <div class="aisle">
-                                        AISLE
-                                    </div>
-                                    
-                                    <!-- Right side seats -->
-                                    <div class="seat_group_right">
-                                        <?php for ($i = $left_seats; $i < $left_seats + $right_seats; $i++): ?>
-                                            <?php if (isset($row_seats[$i])): ?>
-                                                <?php $seat = $row_seats[$i]; ?>
-                                                <div 
-                                                    class="seat <?php echo $seat['booking_id'] ? 'booked' : 'available'; ?> <?php echo $seat['booking_id'] ? strtolower($seat['passenger_gender'] ?? 'neutral') : 'neutral'; ?>"
-                                                    data-seat-id="<?php echo $seat['seat_id']; ?>"
-                                                    data-seat-number="<?php echo htmlspecialchars($seat['seat_number']); ?>"
-                                                    data-seat-type="<?php echo htmlspecialchars($seat['seat_type']); ?>"
-                                                    <?php 
-                                                    if ($seat['booking_id']) {
-                                                        $tooltip = $seat['booking_status'] === 'cancelled' ? 
-                                                            'This seat is unavailable (refund processing)' : 
-                                                            'This seat is already booked';
-                                                        echo 'data-booked="true" title="' . $tooltip . '"';
-                                                    } else {
-                                                        echo 'onclick="selectSeat(this)" title="Click to select seat ' . $seat_counter . '"';
-                                                    }
-                                                    ?>
-                                                >
-                                                    <?php echo $seat_counter++; ?>
-                                                </div>
-                                            <?php endif; ?>
-                                        <?php endfor; ?>
-                                    </div>
+                            <div class="seat_row">
+                                <!-- Left side seats -->
+                                <div class="seat_group_left">
+                                    <?php for ($i = 0; $i < $left_seats && $i < count($row_seats); $i++): ?>
+                                        <?php $seat = $row_seats[$i]; ?>
+                                        <div 
+                                            class="seat <?php echo $seat['booking_id'] ? 'booked' : 'available'; ?> <?php echo $seat['booking_id'] ? strtolower($seat['passenger_gender'] ?? 'neutral') : 'neutral'; ?>"
+                                            data-seat-id="<?php echo $seat['seat_id']; ?>"
+                                            data-seat-number="<?php echo htmlspecialchars($seat['seat_number']); ?>"
+                                            data-seat-type="<?php echo htmlspecialchars($seat['seat_type']); ?>"
+                                            <?php echo $seat['booking_id'] ? 'data-booked="true" title="This seat is already booked"' : 'onclick="selectSeat(this)" title="Click to select seat ' . $seat['seat_number'] . '"'; ?>
+                                        >
+                                            <?php echo $seat['seat_number']; ?>
+                                        </div>
+                                    <?php endfor; ?>
                                 </div>
-                            <?php endforeach; ?>
+                                
+                                <!-- Aisle -->
+                                <div class="aisle">
+                                    AISLE
+                                </div>
+                                
+                                <!-- Right side seats -->
+                                <div class="seat_group_right">
+                                    <?php for ($i = $left_seats; $i < $left_seats + $right_seats && $i < count($row_seats); $i++): ?>
+                                        <?php $seat = $row_seats[$i]; ?>
+                                        <div 
+                                            class="seat <?php echo $seat['booking_id'] ? 'booked' : 'available'; ?> <?php echo $seat['booking_id'] ? strtolower($seat['passenger_gender'] ?? 'neutral') : 'neutral'; ?>"
+                                            data-seat-id="<?php echo $seat['seat_id']; ?>"
+                                            data-seat-number="<?php echo htmlspecialchars($seat['seat_number']); ?>"
+                                            data-seat-type="<?php echo htmlspecialchars($seat['seat_type']); ?>"
+                                            <?php echo $seat['booking_id'] ? 'data-booked="true" title="This seat is already booked"' : 'onclick="selectSeat(this)" title="Click to select seat ' . $seat['seat_number'] . '"'; ?>
+                                        >
+                                            <?php echo $seat['seat_number']; ?>
+                                        </div>
+                                    <?php endfor; ?>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                                    
                         <?php endif; ?>
                     </div>
                     
@@ -416,7 +407,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
                     
                     <!-- Simple Info -->
                     <div style="background: #e8f4fd; border-radius: 8px; padding: 1rem; margin-top: 1rem; font-size: 0.9rem; text-align: center;">
-                        <strong>🪑 Seat Numbering:</strong> Seats are numbered 1, 2, 3, 4... from front to back, left to right across each row
+                        <strong>🪑 Smart Seat Numbering:</strong> Seats numbered 1-<?php echo count($seats); ?> (actual: <?php echo htmlspecialchars($seats[0]['seat_number'] ?? 'A01'); ?>-<?php echo htmlspecialchars(end($seats)['seat_number'] ?? 'A50'); ?>)
                     </div>
                 </div>
             </div>
