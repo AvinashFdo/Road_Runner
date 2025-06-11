@@ -1,4 +1,6 @@
 <?php
+// Operator Bus Management - ORIGINAL DESIGN with Perfect Seat Generation
+// Save this as: operator/buses.php
 
 session_start();
 require_once '../db_connection.php';
@@ -45,30 +47,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     $bus_id = $pdo->lastInsertId();
                     
-                    // Auto-generate seats with SIMPLE SEQUENTIAL NUMBERING
+                    // FIXED: Generate seats with PERFECT simple numbering
                     $seats_per_row = explode('x', $seat_configuration);
                     $left_seats = (int)$seats_per_row[0];
                     $right_seats = (int)$seats_per_row[1];
                     $total_per_row = $left_seats + $right_seats;
-                    $rows = ceil($total_seats / $total_per_row);
                     
-                    $seat_number = 1; // Start with seat number 1
-                    
-                    for ($row = 1; $row <= $rows && $seat_number <= $total_seats; $row++) {
-                        for ($col = 0; $col < $total_per_row && $seat_number <= $total_seats; $col++) {
-                            // Determine seat type (window/aisle/middle)
-                            $seat_type = 'middle';
-                            if ($col == 0 || $col == ($total_per_row - 1)) {
+                    // Generate EXACTLY the number of seats with simple sequential numbering
+                    for ($seat_num = 1; $seat_num <= $total_seats; $seat_num++) {
+                        // Calculate seat type based on position
+                        $position_in_row = (($seat_num - 1) % $total_per_row) + 1;
+                        
+                        // Determine seat type
+                        $seat_type = 'middle';
+                        if ($total_per_row == 4) { // 2x2 configuration
+                            if ($position_in_row == 1 || $position_in_row == 4) {
                                 $seat_type = 'window';
-                            } elseif ($col == ($left_seats - 1) || $col == $left_seats) {
+                            } elseif ($position_in_row == 2 || $position_in_row == 3) {
                                 $seat_type = 'aisle';
                             }
-                            
-                            // Insert seat with simple number (1, 2, 3, 4, 5...)
-                            $stmt = $pdo->prepare("INSERT INTO seats (bus_id, seat_number, seat_type) VALUES (?, ?, ?)");
-                            $stmt->execute([$bus_id, (string)$seat_number, $seat_type]);
-                            $seat_number++;
+                        } elseif ($total_per_row == 5) { // 2x3 configuration
+                            if ($position_in_row == 1 || $position_in_row == 5) {
+                                $seat_type = 'window';
+                            } elseif ($position_in_row == 2 || $position_in_row == 3) {
+                                $seat_type = 'aisle';
+                            } else {
+                                $seat_type = 'middle';
+                            }
                         }
+                        
+                        // Insert seat with simple number (1, 2, 3, 4, 5...)
+                        $stmt = $pdo->prepare("INSERT INTO seats (bus_id, seat_number, seat_type) VALUES (?, ?, ?)");
+                        $stmt->execute([$bus_id, (string)$seat_num, $seat_type]);
                     }
                     
                     $message = "Bus added successfully with " . $total_seats . " seats numbered 1-" . $total_seats . "!";
@@ -273,9 +283,10 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                                 class="form_control" 
                                 min="10" 
                                 max="60"
-                                placeholder="e.g., 45"
+                                placeholder="e.g., 50"
                                 required
                             >
+                            <small style="color: #666;">Seats will be numbered 1, 2, 3... up to this number</small>
                         </div>
                         
                         <div class="form_group">
@@ -284,6 +295,7 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                                 <option value="2x2">2x2 (4 per row)</option>
                                 <option value="2x3">2x3 (5 per row)</option>
                             </select>
+                            <small style="color: #666;">Layout affects seat type (window/aisle)</small>
                         </div>
                     <?php else: ?>
                         <div class="form_group">
