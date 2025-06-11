@@ -1,6 +1,4 @@
 <?php
-// Fix Test Accounts - Run this once to update test account passwords
-// Save this as: fix_test_accounts.php (temporary file)
 
 require_once 'db_connection.php';
 
