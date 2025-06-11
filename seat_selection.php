@@ -1,11 +1,11 @@
 <?php
-// FIXED Gender-Based Seat Selection System
-// Save this as: seat_selection.php
+// Clean Seat Selection System - Built from scratch
+// Save as: seat_selection.php
 
 session_start();
 require_once 'db_connection.php';
 
-// Check if user is logged in
+// Check login
 if (!isset($_SESSION['user_id'])) {
     header('Location: login.php');
     exit();
@@ -20,7 +20,7 @@ if (empty($schedule_id) || empty($travel_date)) {
     exit();
 }
 
-// Validate travel date
+// Validate date
 if (strtotime($travel_date) < strtotime('today')) {
     header('Location: search_buses.php');
     exit();
@@ -31,18 +31,18 @@ $bus_info = null;
 $seats = [];
 
 try {
-    // Get bus and route information
+    // Get trip information
     $stmt = $pdo->prepare("
         SELECT 
             s.schedule_id, s.departure_time, s.arrival_time, s.base_price,
             b.bus_id, b.bus_name, b.bus_number, b.bus_type, b.total_seats, b.seat_configuration, b.amenities,
-            r.route_name, r.origin, r.destination, r.distance_km, r.estimated_duration,
+            r.route_name, r.origin, r.destination, r.distance_km,
             u.full_name as operator_name
         FROM schedules s
         JOIN buses b ON s.bus_id = b.bus_id
         JOIN routes r ON s.route_id = r.route_id
         JOIN users u ON b.operator_id = u.user_id
-        WHERE s.schedule_id = ? AND s.status = 'active' AND b.status = 'active' AND r.status = 'active'
+        WHERE s.schedule_id = ? AND s.status = 'active'
     ");
     $stmt->execute([$schedule_id]);
     $bus_info = $stmt->fetch();
@@ -52,7 +52,7 @@ try {
         exit();
     }
     
-    // Get all seats for this bus with booking information
+    // Get all seats with booking status
     $stmt = $pdo->prepare("
         SELECT 
             s.seat_id, s.seat_number, s.seat_type,
@@ -62,9 +62,7 @@ try {
             AND b.travel_date = ? 
             AND b.booking_status IN ('pending', 'confirmed')
         WHERE s.bus_id = ?
-        ORDER BY 
-            CAST(SUBSTRING(s.seat_number, 2) AS UNSIGNED) ASC,
-            SUBSTRING(s.seat_number, 1, 1) ASC
+        ORDER BY CAST(s.seat_number AS UNSIGNED) ASC
     ");
     $stmt->execute([$travel_date, $bus_info['bus_id']]);
     $seats = $stmt->fetchAll();
@@ -73,186 +71,119 @@ try {
     $error = "Error loading seat information: " . $e->getMessage();
 }
 
-// Create proper seat mapping with correct display numbers
-// Organize seats by rows for display (SIMPLE VERSION)
-$seat_map = [];
-if (!empty($seats)) {
-    $config = explode('x', $bus_info['seat_configuration']);
-    $left_seats = (int)$config[0];
-    $right_seats = (int)$config[1];
-    $seats_per_row = $left_seats + $right_seats;
-    
-    // Since seats are now numbered 1, 2, 3, 4, 5... we can easily calculate rows
-    foreach ($seats as $seat) {
-        $seat_number = (int)$seat['seat_number'];
-        $row = ceil($seat_number / $seats_per_row);
-        
-        if (!isset($seat_map[$row])) {
-            $seat_map[$row] = [];
-        }
-        $seat_map[$row][] = $seat;
-    }
-    
-    // Sort rows
-    ksort($seat_map);
-    
-    // Sort seats within each row
-    foreach ($seat_map as &$row_seats) {
-        usort($row_seats, function($a, $b) {
-            return (int)$a['seat_number'] - (int)$b['seat_number'];
-        });
-    }
-}
-
-// Handle seat booking
+// Handle booking
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
-    $passengers_data = $_POST['passengers'] ?? [];
+    $passengers = $_POST['passengers'] ?? [];
     
-    // Validation
-    if (empty($passengers_data)) {
-        $error = "Please add at least one passenger and select seats.";
+    if (empty($passengers)) {
+        $error = "Please add passengers and select seats.";
     } else {
-        $all_valid = true;
+        $valid = true;
         $selected_seats = [];
         
-        // Get user's phone number from database for all bookings
+        // Get user phone
         $stmt = $pdo->prepare("SELECT phone FROM users WHERE user_id = ?");
         $stmt->execute([$_SESSION['user_id']]);
         $user_phone = $stmt->fetch()['phone'] ?? '';
         
-        // Validate each passenger
-        foreach ($passengers_data as $index => $passenger) {
+        // Validate passengers
+        foreach ($passengers as $index => $passenger) {
             $seat_id = $passenger['seat_id'] ?? '';
             $name = trim($passenger['name'] ?? '');
             $gender = $passenger['gender'] ?? '';
             
             if (empty($seat_id) || empty($name) || empty($gender)) {
-                $error = "Please fill in all details for passenger " . ($index + 1) . " and select a seat.";
-                $all_valid = false;
+                $error = "Please fill all details for passenger " . ($index + 1);
+                $valid = false;
                 break;
             }
             
-            // Validate name (only letters, spaces, dots, and common punctuation)
             if (!preg_match('/^[a-zA-Z\s\.\-\']+$/', $name)) {
-                $error = "Please enter a valid name for passenger " . ($index + 1) . ".";
-                $all_valid = false;
+                $error = "Invalid name for passenger " . ($index + 1);
+                $valid = false;
                 break;
             }
             
-            // Validate gender
             if (!in_array($gender, ['male', 'female'])) {
-                $error = "Please select a valid gender for passenger " . ($index + 1) . ".";
-                $all_valid = false;
+                $error = "Invalid gender for passenger " . ($index + 1);
+                $valid = false;
                 break;
             }
             
             if (in_array($seat_id, $selected_seats)) {
-                $error = "You cannot select the same seat for multiple passengers.";
-                $all_valid = false;
+                $error = "Cannot select same seat for multiple passengers.";
+                $valid = false;
                 break;
             }
             
             $selected_seats[] = $seat_id;
         }
         
-        if ($all_valid) {
+        if ($valid) {
             try {
-                // Begin transaction
                 $pdo->beginTransaction();
                 
-                // Clean up any cancelled bookings that might conflict
-                $stmt = $pdo->prepare("DELETE FROM bookings WHERE booking_status = 'cancelled' AND travel_date = ?");
-                $stmt->execute([$travel_date]);
-                
-                $booking_references = [];
-                $total_amount = count($passengers_data) * $bus_info['base_price'];
-                
-                // Check if all seats are still available (with retry logic)
-                $max_retries = 3;
-                $retry_count = 0;
-                
-                while ($retry_count < $max_retries) {
-                    $conflicting_seats = [];
-                    
-                    foreach ($selected_seats as $seat_id) {
-                        $stmt = $pdo->prepare("
-                            SELECT booking_id FROM bookings 
-                            WHERE seat_id = ? AND travel_date = ? AND booking_status IN ('pending', 'confirmed')
-                        ");
-                        $stmt->execute([$seat_id, $travel_date]);
-                        if ($stmt->fetch()) {
-                            $conflicting_seats[] = $seat_id;
-                        }
+                // Check seat availability
+                foreach ($selected_seats as $seat_id) {
+                    $stmt = $pdo->prepare("SELECT booking_id FROM bookings WHERE seat_id = ? AND travel_date = ? AND booking_status IN ('pending', 'confirmed')");
+                    $stmt->execute([$seat_id, $travel_date]);
+                    if ($stmt->fetch()) {
+                        throw new Exception("One or more seats have been booked. Please refresh and try again.");
                     }
-                    
-                    if (empty($conflicting_seats)) {
-                        break; // All seats are available
-                    }
-                    
-                    $retry_count++;
-                    if ($retry_count >= $max_retries) {
-                        throw new Exception("One or more selected seats have been booked by other passengers. Please refresh the page and select different seats.");
-                    }
-                    
-                    // Small delay before retry
-                    usleep(100000); // 0.1 seconds
                 }
                 
-                // Create bookings for each passenger
-                foreach ($passengers_data as $passenger) {
+                $booking_references = [];
+                
+                // Create bookings
+                foreach ($passengers as $passenger) {
                     // Generate unique booking reference
-                    $attempts = 0;
                     do {
-                        $booking_reference = 'RR' . date('ymd') . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
+                        $booking_ref = 'RR' . date('ymd') . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
                         $stmt = $pdo->prepare("SELECT booking_id FROM bookings WHERE booking_reference = ?");
-                        $stmt->execute([$booking_reference]);
-                        $attempts++;
-                        
-                        // Prevent infinite loop
-                        if ($attempts > 10) {
-                            throw new Exception("Unable to generate unique booking reference. Please try again.");
-                        }
+                        $stmt->execute([$booking_ref]);
                     } while ($stmt->fetch());
                     
-                    // Create booking using account holder's phone number
+                    // Create booking
                     $stmt = $pdo->prepare("
                         INSERT INTO bookings 
                         (booking_reference, passenger_id, schedule_id, seat_id, passenger_name, passenger_phone, passenger_gender, travel_date, total_amount, booking_status, payment_status) 
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', 'pending')
                     ");
                     $stmt->execute([
-                        $booking_reference,
+                        $booking_ref,
                         $_SESSION['user_id'],
                         $schedule_id,
                         $passenger['seat_id'],
                         $passenger['name'],
-                        $user_phone, // Use account holder's phone for all bookings
+                        $user_phone,
                         $passenger['gender'],
                         $travel_date,
                         $bus_info['base_price']
                     ]);
                     
-                    $booking_references[] = $booking_reference;
+                    $booking_references[] = $booking_ref;
                 }
                 
-                // Commit transaction
                 $pdo->commit();
                 
-                // Redirect to booking confirmation with all booking references
+                // Redirect to confirmation
                 header('Location: booking_confirmation.php?booking_refs=' . implode(',', $booking_references));
                 exit();
                 
             } catch (Exception $e) {
-                // Rollback transaction
-                $pdo->rollback();
-                $error = "Booking failed: " . $e->getMessage();
-            } catch (PDOException $e) {
                 $pdo->rollback();
                 $error = "Booking failed: " . $e->getMessage();
             }
         }
     }
 }
+
+// Calculate seat layout
+$config = explode('x', $bus_info['seat_configuration'] ?? '2x2');
+$left_seats = (int)$config[0];
+$right_seats = (int)$config[1];
+$seats_per_row = $left_seats + $right_seats;
+$total_rows = ceil(count($seats) / $seats_per_row);
 ?>
 
 <!DOCTYPE html>
@@ -279,24 +210,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
         </div>
     </header>
 
-    <!-- Main Content -->
     <main class="container">
         <?php if ($error): ?>
-            <div class="alert alert_error">
-                <?php echo htmlspecialchars($error); ?>
-            </div>
+            <div class="alert alert_error"><?php echo htmlspecialchars($error); ?></div>
         <?php endif; ?>
 
         <?php if ($bus_info): ?>
-        <!-- Trip Information -->
+        <!-- Trip Info -->
         <div class="alert alert_info">
-            <h3 style="margin-bottom: 1rem;">
-                <?php echo htmlspecialchars($bus_info['route_name']); ?>
-                <span style="color: #666; font-weight: normal; font-size: 0.9rem;">
-                    - <?php echo date('D, M j, Y', strtotime($travel_date)); ?>
-                </span>
-            </h3>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+            <h3><?php echo htmlspecialchars($bus_info['route_name']); ?> - <?php echo date('D, M j, Y', strtotime($travel_date)); ?></h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem;">
                 <div>
                     <strong>Bus:</strong> <?php echo htmlspecialchars($bus_info['bus_name']); ?> (<?php echo htmlspecialchars($bus_info['bus_number']); ?>)<br>
                     <strong>Type:</strong> <?php echo htmlspecialchars($bus_info['bus_type']); ?>
@@ -306,83 +229,71 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
                     <strong>Operator:</strong> <?php echo htmlspecialchars($bus_info['operator_name']); ?>
                 </div>
                 <div>
-                    <strong>Departure:</strong> <?php echo date('g:i A', strtotime($bus_info['departure_time'])); ?>
-                    <?php if ($bus_info['arrival_time']): ?>
-                        → <?php echo date('g:i A', strtotime($bus_info['arrival_time'])); ?>
-                    <?php endif; ?><br>
-                    <strong>Price:</strong> LKR <?php echo number_format($bus_info['base_price']); ?>
-                </div>
-                <div>
-                    <strong>Total Seats:</strong> <?php echo $bus_info['total_seats']; ?><br>
-                    <strong>Configuration:</strong> <?php echo $bus_info['seat_configuration']; ?>
+                    <strong>Departure:</strong> <?php echo date('g:i A', strtotime($bus_info['departure_time'])); ?><br>
+                    <strong>Price:</strong> LKR <?php echo number_format($bus_info['base_price']); ?> per seat
                 </div>
             </div>
         </div>
 
-        <!-- Seat Selection Interface -->
+        <!-- Seat Selection -->
         <div class="seat_selection_container">
             <!-- Bus Layout -->
             <div>
                 <div class="bus_layout">
                     <div class="bus_header">
-                        <h3>Select Your Seat</h3>
-                        <p style="color: #666; margin: 0;">Click on available seats to select</p>
+                        <h3>Select Your Seats</h3>
+                        <p style="color: #666; margin: 0;">Total Seats: <?php echo count($seats); ?></p>
                     </div>
                     
-                    <div class="driver_area">
-                        🚗 Driver
-                    </div>
+                    <div class="driver_area">🚗 Driver</div>
                     
                     <div id="seat_map">
-                        <?php if (!empty($seat_map)): ?>
-                            <?php 
-                            $config = explode('x', $bus_info['seat_configuration']);
-                            $left_seats = (int)$config[0];
-                            $right_seats = (int)$config[1];
-                            ?>
-                            
-                            <?php foreach ($seat_map as $row_num => $row_seats): ?>
+                        <?php for ($row = 1; $row <= $total_rows; $row++): ?>
                             <div class="seat_row">
-                                <!-- Left side seats -->
+                                <!-- Left seats -->
                                 <div class="seat_group_left">
-                                    <?php for ($i = 0; $i < $left_seats && $i < count($row_seats); $i++): ?>
-                                        <?php $seat = $row_seats[$i]; ?>
-                                        <div 
-                                            class="seat <?php echo $seat['booking_id'] ? 'booked' : 'available'; ?> <?php echo $seat['booking_id'] ? strtolower($seat['passenger_gender'] ?? 'neutral') : 'neutral'; ?>"
-                                            data-seat-id="<?php echo $seat['seat_id']; ?>"
-                                            data-seat-number="<?php echo htmlspecialchars($seat['seat_number']); ?>"
-                                            data-seat-type="<?php echo htmlspecialchars($seat['seat_type']); ?>"
-                                            <?php echo $seat['booking_id'] ? 'data-booked="true" title="This seat is already booked"' : 'onclick="selectSeat(this)" title="Click to select seat ' . $seat['seat_number'] . '"'; ?>
-                                        >
-                                            <?php echo $seat['seat_number']; ?>
-                                        </div>
+                                    <?php for ($left_pos = 1; $left_pos <= $left_seats; $left_pos++): ?>
+                                        <?php 
+                                        $seat_index = (($row - 1) * $seats_per_row) + $left_pos - 1;
+                                        if (isset($seats[$seat_index])):
+                                            $seat = $seats[$seat_index];
+                                        ?>
+                                            <div 
+                                                class="seat <?php echo $seat['booking_id'] ? 'booked' : 'available'; ?> <?php echo $seat['booking_id'] ? strtolower($seat['passenger_gender'] ?? 'neutral') : 'neutral'; ?>"
+                                                data-seat-id="<?php echo $seat['seat_id']; ?>"
+                                                data-seat-number="<?php echo htmlspecialchars($seat['seat_number']); ?>"
+                                                <?php echo $seat['booking_id'] ? 'title="Seat taken"' : 'onclick="selectSeat(this)" title="Click to select seat ' . $seat['seat_number'] . '"'; ?>
+                                            >
+                                                <?php echo $seat['seat_number']; ?>
+                                            </div>
+                                        <?php endif; ?>
                                     <?php endfor; ?>
                                 </div>
                                 
                                 <!-- Aisle -->
-                                <div class="aisle">
-                                    AISLE
-                                </div>
+                                <div class="aisle">AISLE</div>
                                 
-                                <!-- Right side seats -->
+                                <!-- Right seats -->
                                 <div class="seat_group_right">
-                                    <?php for ($i = $left_seats; $i < $left_seats + $right_seats && $i < count($row_seats); $i++): ?>
-                                        <?php $seat = $row_seats[$i]; ?>
-                                        <div 
-                                            class="seat <?php echo $seat['booking_id'] ? 'booked' : 'available'; ?> <?php echo $seat['booking_id'] ? strtolower($seat['passenger_gender'] ?? 'neutral') : 'neutral'; ?>"
-                                            data-seat-id="<?php echo $seat['seat_id']; ?>"
-                                            data-seat-number="<?php echo htmlspecialchars($seat['seat_number']); ?>"
-                                            data-seat-type="<?php echo htmlspecialchars($seat['seat_type']); ?>"
-                                            <?php echo $seat['booking_id'] ? 'data-booked="true" title="This seat is already booked"' : 'onclick="selectSeat(this)" title="Click to select seat ' . $seat['seat_number'] . '"'; ?>
-                                        >
-                                            <?php echo $seat['seat_number']; ?>
-                                        </div>
+                                    <?php for ($right_pos = 1; $right_pos <= $right_seats; $right_pos++): ?>
+                                        <?php 
+                                        $seat_index = (($row - 1) * $seats_per_row) + $left_seats + $right_pos - 1;
+                                        if (isset($seats[$seat_index])):
+                                            $seat = $seats[$seat_index];
+                                        ?>
+                                            <div 
+                                                class="seat <?php echo $seat['booking_id'] ? 'booked' : 'available'; ?> <?php echo $seat['booking_id'] ? strtolower($seat['passenger_gender'] ?? 'neutral') : 'neutral'; ?>"
+                                                data-seat-id="<?php echo $seat['seat_id']; ?>"
+                                                data-seat-number="<?php echo htmlspecialchars($seat['seat_number']); ?>"
+                                                <?php echo $seat['booking_id'] ? 'title="Seat taken"' : 'onclick="selectSeat(this)" title="Click to select seat ' . $seat['seat_number'] . '"'; ?>
+                                            >
+                                                <?php echo $seat['seat_number']; ?>
+                                            </div>
+                                        <?php endif; ?>
                                     <?php endfor; ?>
                                 </div>
                             </div>
-                        <?php endforeach; ?>
-                                    
-                        <?php endif; ?>
+                        <?php endfor; ?>
                     </div>
                     
                     <!-- Legend -->
@@ -404,11 +315,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
                             <span>Selected</span>
                         </div>
                     </div>
-                    
-                    <!-- Simple Info -->
-                    <div style="background: #e8f4fd; border-radius: 8px; padding: 1rem; margin-top: 1rem; font-size: 0.9rem; text-align: center;">
-                        <strong>🪑 Smart Seat Numbering:</strong> Seats numbered 1-<?php echo count($seats); ?> (actual: <?php echo htmlspecialchars($seats[0]['seat_number'] ?? 'A01'); ?>-<?php echo htmlspecialchars(end($seats)['seat_number'] ?? 'A50'); ?>)
-                    </div>
                 </div>
             </div>
             
@@ -416,13 +322,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
             <div class="booking_form">
                 <h3>Passenger Details</h3>
                 
-                <button type="button" class="add_passenger_btn" onclick="addPassenger()">
-                    + Add Passenger
-                </button>
+                <button type="button" class="add_passenger_btn" onclick="addPassenger()">+ Add Passenger</button>
                 
-                <form method="POST" action="" id="booking_form">
+                <form method="POST" id="booking_form">
                     <div id="passengers_container" class="passengers_container">
-                        <!-- Passengers will be added here dynamically -->
+                        <!-- Passengers will be added here -->
                     </div>
                     
                     <div style="border-top: 1px solid #eee; padding-top: 1rem; margin-top: 1rem;">
@@ -431,7 +335,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
                             <span>LKR <?php echo number_format($bus_info['base_price']); ?></span>
                         </div>
                         <div style="display: flex; justify-content: space-between; margin-bottom: 1rem;">
-                            <span>Number of passengers:</span>
+                            <span>Passengers:</span>
                             <span id="passenger_count">0</span>
                         </div>
                         <div style="display: flex; justify-content: space-between; font-size: 1.1rem; font-weight: bold;">
@@ -445,7 +349,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
                     </button>
                 </form>
                 
-                <p style="text-align: center; margin-top: 1rem; font-size: 0.9rem; color: #666;">
+                <p style="text-align: center; margin-top: 1rem;">
                     <a href="search_buses.php">← Back to Search</a>
                 </p>
             </div>
@@ -453,44 +357,216 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_seats'])) {
 
         <!-- Instructions -->
         <div class="alert alert_info mt_2">
-            <h4>🎯 How to Book Your Seats</h4>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin-top: 1rem;">
-                <div>
-                    <strong>1. Add Passengers:</strong><br>
-                    Click "Add Passenger" and enter names and gender for each traveler.
-                </div>
-                <div>
-                    <strong>2. Select Seats:</strong><br>
-                    Click on available seats (numbered 1, 2, 3...) to assign them to your passengers.
-                </div>
-                <div>
-                    <strong>3. Gender-Based Colors:</strong><br>
-                    Seats show the gender of current passengers for your comfort and privacy.
-                </div>
-                <div>
-                    <strong>4. Complete Booking:</strong><br>
-                    Review details and click "Book" to confirm your reservation.
-                </div>
-            </div>
+            <h4>How to Book</h4>
+            <ol style="margin: 1rem 0; padding-left: 2rem;">
+                <li>Click "Add Passenger" and enter passenger details</li>
+                <li>Click on available seats (gray) to select them</li>
+                <li>Blue seats = Male passengers, Pink seats = Female passengers</li>
+                <li>Review your selection and click "Book Seats"</li>
+            </ol>
         </div>
 
         <?php endif; ?>
     </main>
 
-    <!-- Footer -->
     <footer class="footer">
         <div class="container">
-            <p>&copy; 2025 Road Runner. Choose your comfort zone!</p>
+            <p>&copy; 2025 Road Runner. Simple seat selection!</p>
         </div>
     </footer>
 
-    <script src="assets/js/seat_selection.js"></script>
     <script>
-        // Initialize the seat selection system
+        // Simple seat selection JavaScript
+        let selectedSeats = [];
+        let passengers = [];
+        let passengerCounter = 0;
+        const basePrice = <?php echo $bus_info['base_price'] ?? 0; ?>;
+        
+        function selectSeat(seatElement) {
+            const seatId = seatElement.getAttribute('data-seat-id');
+            const seatNumber = seatElement.getAttribute('data-seat-number');
+            
+            if (seatElement.classList.contains('selected')) {
+                // Deselect
+                seatElement.classList.remove('selected');
+                selectedSeats = selectedSeats.filter(s => s.id !== seatId);
+                
+                // Remove from passenger
+                passengers.forEach(p => {
+                    if (p.seatId === seatId) {
+                        p.seatId = null;
+                        p.seatNumber = null;
+                        updatePassengerDisplay(p.id);
+                    }
+                });
+            } else {
+                // Find passenger without seat
+                const passenger = passengers.find(p => !p.seatId);
+                if (!passenger) {
+                    alert('Add more passengers or deselect a seat first.');
+                    return;
+                }
+                
+                // Select
+                seatElement.classList.add('selected');
+                selectedSeats.push({id: seatId, number: seatNumber});
+                
+                // Assign to passenger
+                passenger.seatId = seatId;
+                passenger.seatNumber = seatNumber;
+                updatePassengerDisplay(passenger.id);
+            }
+            
+            updateBookingButton();
+        }
+        
+        function addPassenger() {
+            passengerCounter++;
+            const passengerId = 'passenger_' + passengerCounter;
+            
+            const passenger = {
+                id: passengerId,
+                name: passengerCounter === 1 ? '<?php echo htmlspecialchars($_SESSION['user_name']); ?>' : '',
+                gender: '',
+                seatId: null,
+                seatNumber: null
+            };
+            
+            passengers.push(passenger);
+            
+            const html = `
+                <div class="passenger_form" id="${passengerId}">
+                    <div class="passenger_header">
+                        <span class="passenger_number">Passenger ${passengers.length}</span>
+                        <span class="seat_status"></span>
+                        ${passengers.length > 1 ? `<button type="button" class="remove_passenger" onclick="removePassenger('${passengerId}')">&times;</button>` : ''}
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                        <input type="text" name="passengers[${passengers.length - 1}][name]" placeholder="Full Name" 
+                               class="form_control" value="${passenger.name}" required 
+                               onchange="updatePassengerName('${passengerId}', this.value)">
+                        <select name="passengers[${passengers.length - 1}][gender]" class="form_control" required 
+                                onchange="updatePassengerGender('${passengerId}', this.value)">
+                            <option value="">Select Gender</option>
+                            <option value="male">Male</option>
+                            <option value="female">Female</option>
+                        </select>
+                    </div>
+                    
+                    <input type="hidden" name="passengers[${passengers.length - 1}][seat_id]" value="">
+                </div>
+            `;
+            
+            document.getElementById('passengers_container').insertAdjacentHTML('beforeend', html);
+            updateCounts();
+            updateBookingButton();
+        }
+        
+        function removePassenger(passengerId) {
+            const passenger = passengers.find(p => p.id === passengerId);
+            if (passenger && passenger.seatId) {
+                // Deselect seat
+                const seatElement = document.querySelector(`[data-seat-id="${passenger.seatId}"]`);
+                if (seatElement) {
+                    seatElement.classList.remove('selected');
+                }
+                selectedSeats = selectedSeats.filter(s => s.id !== passenger.seatId);
+            }
+            
+            // Remove passenger
+            passengers = passengers.filter(p => p.id !== passengerId);
+            document.getElementById(passengerId).remove();
+            
+            // Reindex form
+            const forms = document.querySelectorAll('.passenger_form');
+            forms.forEach((form, index) => {
+                const inputs = form.querySelectorAll('input, select');
+                inputs.forEach(input => {
+                    if (input.name.includes('passengers[')) {
+                        const field = input.name.match(/\[(\w+)\]$/)[1];
+                        input.name = `passengers[${index}][${field}]`;
+                    }
+                });
+                
+                form.querySelector('.passenger_number').textContent = `Passenger ${index + 1}`;
+            });
+            
+            updateCounts();
+            updateBookingButton();
+        }
+        
+        function updatePassengerName(passengerId, name) {
+            const passenger = passengers.find(p => p.id === passengerId);
+            if (passenger) passenger.name = name;
+            updateBookingButton();
+        }
+        
+        function updatePassengerGender(passengerId, gender) {
+            const passenger = passengers.find(p => p.id === passengerId);
+            if (passenger) passenger.gender = gender;
+            updateBookingButton();
+        }
+        
+        function updatePassengerDisplay(passengerId) {
+            const passenger = passengers.find(p => p.id === passengerId);
+            const element = document.getElementById(passengerId);
+            const seatStatus = element.querySelector('.seat_status');
+            const hiddenInput = element.querySelector('input[type="hidden"]');
+            
+            if (passenger.seatId) {
+                seatStatus.innerHTML = `<span style="background: #4caf50; color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem;">Seat ${passenger.seatNumber}</span>`;
+                hiddenInput.value = passenger.seatId;
+                element.classList.add('has_seat');
+            } else {
+                seatStatus.innerHTML = '';
+                hiddenInput.value = '';
+                element.classList.remove('has_seat');
+            }
+        }
+        
+        function updateCounts() {
+            document.getElementById('passenger_count').textContent = passengers.length;
+            document.getElementById('total_amount').textContent = 'LKR ' + (passengers.length * basePrice).toLocaleString();
+        }
+        
+        function updateBookingButton() {
+            const button = document.getElementById('book_button');
+            const allHaveNames = passengers.every(p => p.name.trim() !== '');
+            const allHaveGenders = passengers.every(p => p.gender !== '');
+            const allHaveSeats = passengers.every(p => p.seatId !== null);
+            
+            if (passengers.length === 0) {
+                button.disabled = true;
+                button.textContent = 'Add Passengers First';
+            } else if (!allHaveNames) {
+                button.disabled = true;
+                button.textContent = 'Enter All Names';
+            } else if (!allHaveGenders) {
+                button.disabled = true;
+                button.textContent = 'Select All Genders';
+            } else if (!allHaveSeats) {
+                button.disabled = true;
+                button.textContent = `Select Seats (${selectedSeats.length}/${passengers.length})`;
+            } else {
+                button.disabled = false;
+                button.textContent = `Book ${passengers.length} Seat${passengers.length > 1 ? 's' : ''} - LKR ${(passengers.length * basePrice).toLocaleString()}`;
+            }
+        }
+        
+        // Initialize with one passenger
         document.addEventListener('DOMContentLoaded', function() {
-            <?php if ($bus_info): ?>
-                initSeatSelection(<?php echo $bus_info['base_price']; ?>, '<?php echo htmlspecialchars($_SESSION['user_name'], ENT_QUOTES); ?>');
-            <?php endif; ?>
+            addPassenger();
+        });
+        
+        // Form validation
+        document.getElementById('booking_form').addEventListener('submit', function(e) {
+            const totalAmount = passengers.length * basePrice;
+            const seatNumbers = passengers.map(p => p.seatNumber).join(', ');
+            
+            if (!confirm(`Confirm booking for ${passengers.length} passenger(s)?\n\nSeats: ${seatNumbers}\nTotal: LKR ${totalAmount.toLocaleString()}`)) {
+                e.preventDefault();
+            }
         });
     </script>
 </body>
