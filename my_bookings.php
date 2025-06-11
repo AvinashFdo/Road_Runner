@@ -1,6 +1,4 @@
 <?php
-// Clean My Bookings System - Built from scratch
-// Save as: my_bookings.php
 
 session_start();
 require_once 'db_connection.php';
