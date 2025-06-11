@@ -1,4 +1,5 @@
 <?php
+
 session_start();
 require_once '../db_connection.php';
 
@@ -44,20 +45,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     $bus_id = $pdo->lastInsertId();
                     
-                    // Auto-generate seats for the bus
+                    // Auto-generate seats with SIMPLE SEQUENTIAL NUMBERING
                     $seats_per_row = explode('x', $seat_configuration);
                     $left_seats = (int)$seats_per_row[0];
                     $right_seats = (int)$seats_per_row[1];
                     $total_per_row = $left_seats + $right_seats;
                     $rows = ceil($total_seats / $total_per_row);
                     
-                    $seat_letters = ['A', 'B', 'C', 'D', 'E', 'F'];
-                    $seat_count = 0;
+                    $seat_number = 1; // Start with seat number 1
                     
-                    for ($row = 1; $row <= $rows && $seat_count < $total_seats; $row++) {
-                        for ($col = 0; $col < $total_per_row && $seat_count < $total_seats; $col++) {
-                            $seat_number = $seat_letters[$col] . sprintf('%02d', $row);
-                            
+                    for ($row = 1; $row <= $rows && $seat_number <= $total_seats; $row++) {
+                        for ($col = 0; $col < $total_per_row && $seat_number <= $total_seats; $col++) {
                             // Determine seat type (window/aisle/middle)
                             $seat_type = 'middle';
                             if ($col == 0 || $col == ($total_per_row - 1)) {
@@ -66,13 +64,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $seat_type = 'aisle';
                             }
                             
+                            // Insert seat with simple number (1, 2, 3, 4, 5...)
                             $stmt = $pdo->prepare("INSERT INTO seats (bus_id, seat_number, seat_type) VALUES (?, ?, ?)");
-                            $stmt->execute([$bus_id, $seat_number, $seat_type]);
-                            $seat_count++;
+                            $stmt->execute([$bus_id, (string)$seat_number, $seat_type]);
+                            $seat_number++;
                         }
                     }
                     
-                    $message = "Bus added successfully with " . $total_seats . " seats generated!";
+                    $message = "Bus added successfully with " . $total_seats . " seats numbered 1-" . $total_seats . "!";
                 }
             } catch (PDOException $e) {
                 $error = "Error adding bus: " . $e->getMessage();
@@ -353,7 +352,8 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                                 </td>
                                 <td>
                                     <span class="badge badge_<?php echo strtolower(str_replace('-', '', $bus['bus_type'])); ?>"><?php echo $bus['bus_type']; ?></span><br>
-                                    <small><?php echo $bus['actual_seats']; ?> seats (<?php echo $bus['seat_configuration']; ?>)</small>
+                                    <small><?php echo $bus['actual_seats']; ?> seats (<?php echo $bus['seat_configuration']; ?>)</small><br>
+                                    <small style="color: #27ae60;">📍 Numbered 1-<?php echo $bus['actual_seats']; ?></small>
                                 </td>
                                 <td>
                                     <?php if ($bus['amenities']): ?>
@@ -388,19 +388,19 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
             <h4>💡 Bus Management Tips</h4>
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin-top: 1rem;">
                 <div>
-                    <strong>Bus Numbers:</strong><br>
-                    Use your official registration number for easy identification.
+                    <strong>🪑 Simple Seat Numbers:</strong><br>
+                    Seats are automatically numbered 1, 2, 3, 4... from front to back for easy identification.
                 </div>
                 <div>
-                    <strong>Seat Configuration:</strong><br>
-                    Choose the layout that matches your physical bus setup.
+                    <strong>🚌 Bus Numbers:</strong><br>
+                    Use your official registration number for easy identification by passengers.
                 </div>
                 <div>
-                    <strong>Amenities:</strong><br>
-                    List features that attract passengers like WiFi, AC, USB charging.
+                    <strong>⚙️ Seat Configuration:</strong><br>
+                    Choose the layout that matches your physical bus setup (2x2 or 2x3).
                 </div>
                 <div>
-                    <strong>Status Management:</strong><br>
+                    <strong>🔧 Status Management:</strong><br>
                     Set to 'Maintenance' when bus needs service to prevent new bookings.
                 </div>
             </div>
