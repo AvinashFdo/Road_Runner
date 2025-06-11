@@ -28,25 +28,145 @@ try {
     $stmt->execute([$user_id]);
     $active_routes = $stmt->fetch()['schedule_count'];
     
+    // Get actual bookings count for today
+    $stmt = $pdo->prepare("
+        SELECT COUNT(*) as today_bookings 
+        FROM bookings bk 
+        JOIN schedules s ON bk.schedule_id = s.schedule_id 
+        JOIN buses b ON s.bus_id = b.bus_id 
+        WHERE b.operator_id = ? 
+        AND DATE(bk.booking_date) = CURDATE()
+        AND bk.booking_status IN ('pending', 'confirmed')
+    ");
+    $stmt->execute([$user_id]);
+    $today_bookings = $stmt->fetch()['today_bookings'];
     
-    $today_bookings = 0; 
-    $total_revenue = 0; 
+    // Get total revenue from confirmed bookings
+    $stmt = $pdo->prepare("
+        SELECT SUM(bk.total_amount) as total_revenue 
+        FROM bookings bk 
+        JOIN schedules s ON bk.schedule_id = s.schedule_id 
+        JOIN buses b ON s.bus_id = b.bus_id 
+        WHERE b.operator_id = ? 
+        AND bk.booking_status IN ('confirmed', 'completed')
+    ");
+    $stmt->execute([$user_id]);
+    $total_revenue = $stmt->fetch()['total_revenue'] ?? 0;
     
     // Get operator info
     $stmt = $pdo->prepare("SELECT full_name, email, phone, created_at FROM users WHERE user_id = ?");
     $stmt->execute([$user_id]);
     $operator_info = $stmt->fetch();
     
+    // Get recent activities (last 10 activities)
+    $recent_activities = [];
+    
+    // Recent bus additions/updates (last 5)
+    $stmt = $pdo->prepare("
+        SELECT 
+            'Bus Management' as action_type,
+            CONCAT('Added bus: ', bus_name, ' (', bus_number, ')') as action_details,
+            created_at as action_time,
+            'bus_added' as action_category
+        FROM buses 
+        WHERE operator_id = ? 
+        ORDER BY created_at DESC 
+        LIMIT 5
+    ");
+    $stmt->execute([$user_id]);
+    $bus_activities = $stmt->fetchAll();
+    
+    // Recent schedule additions/updates (last 5)
+    $stmt = $pdo->prepare("
+        SELECT 
+            'Schedule Management' as action_type,
+            CONCAT('Schedule created for ', r.route_name, ' - ', TIME_FORMAT(s.departure_time, '%h:%i %p')) as action_details,
+            s.created_at as action_time,
+            'schedule_added' as action_category
+        FROM schedules s
+        JOIN buses b ON s.bus_id = b.bus_id
+        JOIN routes r ON s.route_id = r.route_id
+        WHERE b.operator_id = ? 
+        ORDER BY s.created_at DESC 
+        LIMIT 5
+    ");
+    $stmt->execute([$user_id]);
+    $schedule_activities = $stmt->fetchAll();
+    
+    // Recent bookings (last 5)
+    $stmt = $pdo->prepare("
+        SELECT 
+            'New Booking' as action_type,
+            CONCAT('Booking ', bk.booking_reference, ' - Seat ', st.seat_number, ' for ', r.origin, ' to ', r.destination) as action_details,
+            bk.booking_date as action_time,
+            'booking_received' as action_category
+        FROM bookings bk
+        JOIN schedules s ON bk.schedule_id = s.schedule_id
+        JOIN buses b ON s.bus_id = b.bus_id
+        JOIN routes r ON s.route_id = r.route_id
+        JOIN seats st ON bk.seat_id = st.seat_id
+        WHERE b.operator_id = ? 
+        AND bk.booking_status IN ('pending', 'confirmed')
+        ORDER BY bk.booking_date DESC 
+        LIMIT 5
+    ");
+    $stmt->execute([$user_id]);
+    $booking_activities = $stmt->fetchAll();
+    
+    // Combine all activities and sort by time
+    $all_activities = array_merge($bus_activities, $schedule_activities, $booking_activities);
+    
+    // Sort by action_time descending
+    usort($all_activities, function($a, $b) {
+        return strtotime($b['action_time']) - strtotime($a['action_time']);
+    });
+    
+    // Take only the most recent 8 activities
+    $recent_activities = array_slice($all_activities, 0, 8);
+    
+    // If no activities, show welcome message
+    if (empty($recent_activities)) {
+        $recent_activities = [
+            [
+                'action_type' => 'Welcome',
+                'action_details' => 'Welcome to Road Runner! Start by adding your first bus.',
+                'action_time' => date('Y-m-d H:i:s'),
+                'action_category' => 'welcome'
+            ]
+        ];
+    }
+    
 } catch (PDOException $e) {
     $error = "Error loading dashboard data: " . $e->getMessage();
+    $total_buses = 0;
+    $active_buses = 0;
+    $active_routes = 0;
+    $today_bookings = 0;
+    $total_revenue = 0;
+    $recent_activities = [];
 }
 
-// Sample recent activities (will be replaced with real data later)
-$recent_activities = [
-    ['action' => 'Bus Route Added', 'details' => 'Colombo to Kandy', 'time' => '2 hours ago'],
-    ['action' => 'Schedule Updated', 'details' => 'Evening departure times', 'time' => '5 hours ago'],
-    ['action' => 'New Booking', 'details' => 'Seat A12 - Morning trip', 'time' => '1 day ago'],
-];
+// Helper function to get time ago
+function timeAgo($datetime) {
+    $time = time() - strtotime($datetime);
+    
+    if ($time < 60) return 'Just now';
+    if ($time < 3600) return floor($time/60) . ' minutes ago';
+    if ($time < 86400) return floor($time/3600) . ' hours ago';
+    if ($time < 2592000) return floor($time/86400) . ' days ago';
+    return date('M j, Y', strtotime($datetime));
+}
+
+// Helper function to get activity icon
+function getActivityIcon($category) {
+    switch ($category) {
+        case 'bus_added': return '🚌';
+        case 'schedule_added': return '📅';
+        case 'booking_received': return '🎫';
+        case 'welcome': return '👋';
+        default: return '📋';
+    }
+}
 ?>
 
 <!DOCTYPE html>
@@ -56,6 +176,7 @@ $recent_activities = [
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Operator Dashboard - Road Runner</title>
     <link rel="stylesheet" href="../assets/css/style.css">
+    
 </head>
 <body>
     <!-- Header -->
@@ -128,53 +249,60 @@ $recent_activities = [
             <!-- Operator Information -->
             <div class="table_container">
                 <h3 class="p_1 mb_1">Operator Information</h3>
-                <?php if ($operator_info): ?>
-                    <table class="table">
-                        <tr>
-                            <td><strong>Full Name:</strong></td>
-                            <td><?php echo htmlspecialchars($operator_info['full_name']); ?></td>
-                        </tr>
-                        <tr>
-                            <td><strong>Email:</strong></td>
-                            <td><?php echo htmlspecialchars($operator_info['email']); ?></td>
-                        </tr>
-                        <tr>
-                            <td><strong>Phone:</strong></td>
-                            <td><?php echo htmlspecialchars($operator_info['phone']); ?></td>
-                        </tr>
-                        <tr>
-                            <td><strong>Member Since:</strong></td>
-                            <td><?php echo date('M j, Y', strtotime($operator_info['created_at'])); ?></td>
-                        </tr>
-                        <tr>
-                            <td><strong>Account Status:</strong></td>
-                            <td><span class="badge badge_active">Active</span></td>
-                        </tr>
-                    </table>
-                <?php endif; ?>
+                <div style="padding: 1rem;">
+                    <?php if ($operator_info): ?>
+                        <div class="dashboard_metric">
+                            <span class="metric_label">Full Name:</span>
+                            <span class="metric_value"><?php echo htmlspecialchars($operator_info['full_name']); ?></span>
+                        </div>
+                        <div class="dashboard_metric">
+                            <span class="metric_label">Email:</span>
+                            <span class="metric_value"><?php echo htmlspecialchars($operator_info['email']); ?></span>
+                        </div>
+                        <div class="dashboard_metric">
+                            <span class="metric_label">Phone:</span>
+                            <span class="metric_value"><?php echo htmlspecialchars($operator_info['phone']); ?></span>
+                        </div>
+                        <div class="dashboard_metric">
+                            <span class="metric_label">Member Since:</span>
+                            <span class="metric_value"><?php echo date('M j, Y', strtotime($operator_info['created_at'])); ?></span>
+                        </div>
+                        <div class="dashboard_metric">
+                            <span class="metric_label">Today's Bookings:</span>
+                            <span class="metric_value" style="color: #3498db;"><?php echo $today_bookings; ?> booking<?php echo $today_bookings !== 1 ? 's' : ''; ?></span>
+                        </div>
+                        <div class="dashboard_metric">
+                            <span class="metric_label">Account Status:</span>
+                            <span class="metric_value"><span class="badge badge_active">Active</span></span>
+                        </div>
+                    <?php endif; ?>
+                </div>
             </div>
 
             <!-- Recent Activities -->
             <div class="table_container">
                 <h3 class="p_1 mb_1">Recent Activities</h3>
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Action</th>
-                            <th>Details</th>
-                            <th>Time</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+                <div style="max-height: 400px; overflow-y: auto;">
+                    <?php if (!empty($recent_activities)): ?>
                         <?php foreach ($recent_activities as $activity): ?>
-                            <tr>
-                                <td><?php echo htmlspecialchars($activity['action']); ?></td>
-                                <td><?php echo htmlspecialchars($activity['details']); ?></td>
-                                <td><?php echo htmlspecialchars($activity['time']); ?></td>
-                            </tr>
+                            <div class="activity_item">
+                                <div class="activity_icon">
+                                    <?php echo getActivityIcon($activity['action_category']); ?>
+                                </div>
+                                <div class="activity_content">
+                                    <div class="activity_type"><?php echo htmlspecialchars($activity['action_type']); ?></div>
+                                    <div class="activity_details"><?php echo htmlspecialchars($activity['action_details']); ?></div>
+                                    <div class="activity_time"><?php echo timeAgo($activity['action_time']); ?></div>
+                                </div>
+                            </div>
                         <?php endforeach; ?>
-                    </tbody>
-                </table>
+                    <?php else: ?>
+                        <div class="no_activities">
+                            <p>No recent activities found.</p>
+                            <p><small>Your activities will appear here as you manage your buses and schedules.</small></p>
+                        </div>
+                    <?php endif; ?>
+                </div>
             </div>
         </div>
 
@@ -218,6 +346,7 @@ $recent_activities = [
         </div>
 
         <!-- Getting Started Guide -->
+        <?php if ($total_buses === 0): ?>
         <div class="alert alert_info mt_2">
             <h4>Getting Started as a Bus Operator</h4>
             <p><strong>Welcome to Road Runner!</strong> Here's how to get started:</p>
@@ -229,6 +358,21 @@ $recent_activities = [
             </ol>
             <p><em>Need help? Contact our support team for assistance with setting up your account.</em></p>
         </div>
+        <?php else: ?>
+        <div class="alert alert_success mt_2">
+            <h4>🎉 Your Bus Operation is Active!</h4>
+            <p>Great job! You have <strong><?php echo $total_buses; ?> bus(es)</strong> and <strong><?php echo $active_routes; ?> active schedule(s)</strong>. Keep monitoring your dashboard for new bookings and activity updates.</p>
+            <div style="margin-top: 1rem;">
+                <strong>Quick Tips:</strong>
+                <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
+                    <li>Check recent activities to stay updated on bookings and system changes</li>
+                    <li>Monitor today's bookings and total revenue regularly</li>
+                    <li>Update schedules and pricing based on demand patterns</li>
+                    <li>Keep your bus information and contact details current</li>
+                </ul>
+            </div>
+        </div>
+        <?php endif; ?>
     </main>
 
     <!-- Footer -->
@@ -237,5 +381,27 @@ $recent_activities = [
             <p>&copy; 2025 Road Runner Operator Panel. All rights reserved.</p>
         </div>
     </footer>
+
+    <script>
+        // Auto-refresh dashboard every 5 minutes to show latest activities
+        setTimeout(function() {
+            location.reload();
+        }, 300000); // 5 minutes
+
+        // Add smooth animations to stat cards
+        document.addEventListener('DOMContentLoaded', function() {
+            const statCards = document.querySelectorAll('.stat_card');
+            statCards.forEach((card, index) => {
+                card.style.opacity = '0';
+                card.style.transform = 'translateY(20px)';
+                card.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+                
+                setTimeout(() => {
+                    card.style.opacity = '1';
+                    card.style.transform = 'translateY(0)';
+                }, index * 100);
+            });
+        });
+    </script>
 </body>
 </html>
