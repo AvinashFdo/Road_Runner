@@ -1,6 +1,6 @@
 <?php
-// Operator Bus Management - ORIGINAL DESIGN with Perfect Seat Generation
-// Save this as: operator/buses.php
+// Clean Bus Management System - Built from scratch
+// Save as: operator/buses.php
 
 session_start();
 require_once '../db_connection.php';
@@ -20,18 +20,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     
     if ($action === 'add_bus') {
-        // Add new bus
+        // Get form data
         $bus_number = trim($_POST['bus_number'] ?? '');
         $bus_name = trim($_POST['bus_name'] ?? '');
         $bus_type = $_POST['bus_type'] ?? 'Non-AC';
-        $total_seats = $_POST['total_seats'] ?? '';
+        $total_seats = (int)($_POST['total_seats'] ?? 0);
         $seat_configuration = $_POST['seat_configuration'] ?? '2x2';
         $amenities = trim($_POST['amenities'] ?? '');
         
         // Validation
         if (empty($bus_number) || empty($bus_name)) {
             $error = "Bus number and bus name are required.";
-        } elseif (!is_numeric($total_seats) || $total_seats < 10 || $total_seats > 60) {
+        } elseif ($total_seats < 10 || $total_seats > 60) {
             $error = "Total seats must be between 10 and 60.";
         } else {
             try {
@@ -47,50 +47,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     $bus_id = $pdo->lastInsertId();
                     
-                    // Auto-generate seats with simple numbers (1, 2, 3, 4, 5... 50)
-$seats_per_row = explode('x', $seat_configuration);
-$left_seats = (int)$seats_per_row[0];
-$right_seats = (int)$seats_per_row[1];
-$total_per_row = $left_seats + $right_seats;
-
-// Generate seats with simple sequential numbers
-for ($seat_number = 1; $seat_number <= $total_seats; $seat_number++) {
-    // Calculate which row and position this seat is in
-    $row = ceil($seat_number / $total_per_row);
-    $position_in_row = (($seat_number - 1) % $total_per_row) + 1;
-    
-    // Determine seat type based on position
-    $seat_type = 'middle'; // default
-    
-    if ($position_in_row == 1 || $position_in_row == $total_per_row) {
-        $seat_type = 'window'; // First and last seats in row are windows
-    } elseif ($position_in_row == $left_seats || $position_in_row == ($left_seats + 1)) {
-        $seat_type = 'aisle'; // Seats next to aisle
-    }
-    
-    // Insert seat with simple number
-    $stmt = $pdo->prepare("INSERT INTO seats (bus_id, seat_number, seat_type) VALUES (?, ?, ?)");
-    $stmt->execute([$bus_id, (string)$seat_number, $seat_type]);
-                            $seat_count++;
+                    // CLEAN SEAT GENERATION - Simple sequential numbering
+                    for ($seat_num = 1; $seat_num <= $total_seats; $seat_num++) {
+                        // Determine seat type based on position
+                        $config = explode('x', $seat_configuration);
+                        $seats_per_row = (int)$config[0] + (int)$config[1];
+                        $position_in_row = (($seat_num - 1) % $seats_per_row) + 1;
+                        
+                        if ($position_in_row == 1 || $position_in_row == $seats_per_row) {
+                            $seat_type = 'window';
+                        } elseif ($position_in_row == (int)$config[0] || $position_in_row == ((int)$config[0] + 1)) {
+                            $seat_type = 'aisle';
+                        } else {
+                            $seat_type = 'middle';
                         }
+                        
+                        $stmt = $pdo->prepare("INSERT INTO seats (bus_id, seat_number, seat_type) VALUES (?, ?, ?)");
+                        $stmt->execute([$bus_id, (string)$seat_num, $seat_type]);
                     }
-
-                    // Verify seat count
-                    $stmt = $pdo->prepare("SELECT COUNT(*) as created_seats FROM seats WHERE bus_id = ?");
+                    
+                    // Verify seat creation
+                    $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM seats WHERE bus_id = ?");
                     $stmt->execute([$bus_id]);
-                    $actual_created = $stmt->fetch()['created_seats'];
-
-                    if ($actual_created != $total_seats) {
-                        error_log("Warning: Bus ID $bus_id - Expected $total_seats seats, but created $actual_created seats");
-                    }
-
-                    $message = "Bus added successfully with " . $actual_created . " seats generated (Expected: " . $total_seats . ")!";
-                // Verify seat count
-                $stmt = $pdo->prepare("SELECT COUNT(*) as created_seats FROM seats WHERE bus_id = ?");
-                $stmt->execute([$bus_id]);
-                $actual_created = $stmt->fetch()['created_seats'];
-
-                $message = "Bus added successfully with " . $actual_created . " seats (numbered 1 to " . $total_seats . ")!";
+                    $actual_seats = $stmt->fetch()['count'];
+                    
+                    $message = "Bus added successfully! Created $actual_seats seats (numbered 1 to $total_seats).";
+                }
             } catch (PDOException $e) {
                 $error = "Error adding bus: " . $e->getMessage();
             }
@@ -98,7 +80,6 @@ for ($seat_number = 1; $seat_number <= $total_seats; $seat_number++) {
     }
     
     elseif ($action === 'update_bus') {
-        // Update existing bus
         $bus_id = $_POST['bus_id'] ?? '';
         $bus_number = trim($_POST['bus_number'] ?? '');
         $bus_name = trim($_POST['bus_name'] ?? '');
@@ -110,16 +91,9 @@ for ($seat_number = 1; $seat_number <= $total_seats; $seat_number++) {
             $error = "Bus number and bus name are required.";
         } else {
             try {
-                // Check if bus belongs to this operator
-                $stmt = $pdo->prepare("SELECT bus_id FROM buses WHERE bus_id = ? AND operator_id = ?");
-                $stmt->execute([$bus_id, $operator_id]);
-                if (!$stmt->fetch()) {
-                    $error = "Bus not found or you don't have permission to edit it.";
-                } else {
-                    $stmt = $pdo->prepare("UPDATE buses SET bus_number = ?, bus_name = ?, bus_type = ?, amenities = ?, status = ? WHERE bus_id = ? AND operator_id = ?");
-                    $stmt->execute([$bus_number, $bus_name, $bus_type, $amenities, $status, $bus_id, $operator_id]);
-                    $message = "Bus updated successfully!";
-                }
+                $stmt = $pdo->prepare("UPDATE buses SET bus_number = ?, bus_name = ?, bus_type = ?, amenities = ?, status = ? WHERE bus_id = ? AND operator_id = ?");
+                $stmt->execute([$bus_number, $bus_name, $bus_type, $amenities, $status, $bus_id, $operator_id]);
+                $message = "Bus updated successfully!";
             } catch (PDOException $e) {
                 $error = "Error updating bus: " . $e->getMessage();
             }
@@ -127,27 +101,24 @@ for ($seat_number = 1; $seat_number <= $total_seats; $seat_number++) {
     }
     
     elseif ($action === 'delete_bus') {
-        // Delete bus
         $bus_id = $_POST['bus_id'] ?? '';
         try {
             // Check if bus has active schedules
-            $stmt = $pdo->prepare("SELECT COUNT(*) as schedule_count FROM schedules WHERE bus_id = ? AND status = 'active'");
+            $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM schedules WHERE bus_id = ? AND status = 'active'");
             $stmt->execute([$bus_id]);
-            $result = $stmt->fetch();
+            $active_schedules = $stmt->fetch()['count'];
             
-            if ($result['schedule_count'] > 0) {
-                $error = "Cannot delete bus. It has active schedules. Please remove schedules first.";
+            if ($active_schedules > 0) {
+                $error = "Cannot delete bus. It has $active_schedules active schedules.";
             } else {
-                // Check if bus belongs to this operator
-                $stmt = $pdo->prepare("SELECT bus_id FROM buses WHERE bus_id = ? AND operator_id = ?");
+                // Delete seats first, then bus
+                $stmt = $pdo->prepare("DELETE FROM seats WHERE bus_id = ?");
+                $stmt->execute([$bus_id]);
+                
+                $stmt = $pdo->prepare("DELETE FROM buses WHERE bus_id = ? AND operator_id = ?");
                 $stmt->execute([$bus_id, $operator_id]);
-                if (!$stmt->fetch()) {
-                    $error = "Bus not found or you don't have permission to delete it.";
-                } else {
-                    $stmt = $pdo->prepare("DELETE FROM buses WHERE bus_id = ? AND operator_id = ?");
-                    $stmt->execute([$bus_id, $operator_id]);
-                    $message = "Bus deleted successfully!";
-                }
+                
+                $message = "Bus deleted successfully!";
             }
         } catch (PDOException $e) {
             $error = "Error deleting bus: " . $e->getMessage();
@@ -157,7 +128,14 @@ for ($seat_number = 1; $seat_number <= $total_seats; $seat_number++) {
 
 // Get all buses for this operator
 try {
-    $stmt = $pdo->prepare("SELECT b.*, COUNT(s.seat_id) as actual_seats FROM buses b LEFT JOIN seats s ON b.bus_id = s.bus_id WHERE b.operator_id = ? GROUP BY b.bus_id ORDER BY b.bus_name ASC");
+    $stmt = $pdo->prepare("
+        SELECT b.*, COUNT(s.seat_id) as actual_seats 
+        FROM buses b 
+        LEFT JOIN seats s ON b.bus_id = s.bus_id 
+        WHERE b.operator_id = ? 
+        GROUP BY b.bus_id 
+        ORDER BY b.bus_name ASC
+    ");
     $stmt->execute([$operator_id]);
     $buses = $stmt->fetchAll();
 } catch (PDOException $e) {
@@ -165,7 +143,7 @@ try {
     $buses = [];
 }
 
-// Get bus for editing if edit_id is provided
+// Get bus for editing
 $edit_bus = null;
 if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
     try {
@@ -183,7 +161,7 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bus Management - Road Runner Operator</title>
+    <title>Bus Management - Road Runner</title>
     <link rel="stylesheet" href="../assets/css/style.css">
 </head>
 <body>
@@ -210,7 +188,6 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                 <a href="schedules.php">Routes & Schedules</a>
                 <a href="#" onclick="alert('Coming soon!')">Bookings</a>
                 <a href="#" onclick="alert('Coming soon!')">Revenue Reports</a>
-                <a href="#" onclick="alert('Coming soon!')">Profile Settings</a>
             </div>
         </div>
     </div>
@@ -219,17 +196,13 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
     <main class="container">
         <h2 class="mb_2">Bus Fleet Management</h2>
 
-        <!-- Display Messages -->
+        <!-- Messages -->
         <?php if ($message): ?>
-            <div class="alert alert_success">
-                <?php echo htmlspecialchars($message); ?>
-            </div>
+            <div class="alert alert_success"><?php echo htmlspecialchars($message); ?></div>
         <?php endif; ?>
 
         <?php if ($error): ?>
-            <div class="alert alert_error">
-                <?php echo htmlspecialchars($error); ?>
-            </div>
+            <div class="alert alert_error"><?php echo htmlspecialchars($error); ?></div>
         <?php endif; ?>
 
         <!-- Add/Edit Bus Form -->
@@ -245,28 +218,16 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                     <div class="form_group">
                         <label for="bus_number">Bus Number: *</label>
-                        <input 
-                            type="text" 
-                            id="bus_number" 
-                            name="bus_number" 
-                            class="form_control" 
-                            value="<?php echo $edit_bus ? htmlspecialchars($edit_bus['bus_number']) : ''; ?>"
-                            placeholder="e.g., NB-1234 or 58-9876"
-                            required
-                        >
+                        <input type="text" id="bus_number" name="bus_number" class="form_control" 
+                               value="<?php echo $edit_bus ? htmlspecialchars($edit_bus['bus_number']) : ''; ?>" 
+                               placeholder="e.g., NB-1234" required>
                     </div>
                     
                     <div class="form_group">
                         <label for="bus_name">Bus Name: *</label>
-                        <input 
-                            type="text" 
-                            id="bus_name" 
-                            name="bus_name" 
-                            class="form_control" 
-                            value="<?php echo $edit_bus ? htmlspecialchars($edit_bus['bus_name']) : ''; ?>"
-                            placeholder="e.g., Express Cruiser"
-                            required
-                        >
+                        <input type="text" id="bus_name" name="bus_name" class="form_control" 
+                               value="<?php echo $edit_bus ? htmlspecialchars($edit_bus['bus_name']) : ''; ?>" 
+                               placeholder="e.g., Express Cruiser" required>
                     </div>
                 </div>
                 
@@ -284,17 +245,8 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                     <?php if (!$edit_bus): ?>
                         <div class="form_group">
                             <label for="total_seats">Total Seats: *</label>
-                            <input 
-                                type="number" 
-                                id="total_seats" 
-                                name="total_seats" 
-                                class="form_control" 
-                                min="10" 
-                                max="60"
-                                placeholder="e.g., 50"
-                                required
-                            >
-                            <small style="color: #666;">Seats will be numbered 1, 2, 3... up to this number</small>
+                            <input type="number" id="total_seats" name="total_seats" class="form_control" 
+                                   min="10" max="60" placeholder="e.g., 50" required>
                         </div>
                         
                         <div class="form_group">
@@ -302,14 +254,13 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                             <select id="seat_configuration" name="seat_configuration" class="form_control">
                                 <option value="2x2">2x2 (4 per row)</option>
                                 <option value="2x3">2x3 (5 per row)</option>
+                                <option value="3x2">3x2 (5 per row)</option>
                             </select>
-                            <small style="color: #666;">Layout affects seat type (window/aisle)</small>
                         </div>
                     <?php else: ?>
                         <div class="form_group">
                             <label>Total Seats:</label>
                             <input type="text" class="form_control" value="<?php echo $edit_bus['total_seats']; ?>" readonly style="background: #f5f5f5;">
-                            <small style="color: #666;">Seats cannot be changed after creation</small>
                         </div>
                         
                         <div class="form_group">
@@ -325,13 +276,8 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                 
                 <div class="form_group">
                     <label for="amenities">Amenities:</label>
-                    <textarea 
-                        id="amenities" 
-                        name="amenities" 
-                        class="form_control" 
-                        rows="2"
-                        placeholder="e.g., WiFi, USB Charging, Reading Lights, Reclining Seats"
-                    ><?php echo $edit_bus ? htmlspecialchars($edit_bus['amenities']) : ''; ?></textarea>
+                    <textarea id="amenities" name="amenities" class="form_control" rows="2" 
+                              placeholder="e.g., WiFi, USB Charging, AC, Reclining Seats"><?php echo $edit_bus ? htmlspecialchars($edit_bus['amenities']) : ''; ?></textarea>
                 </div>
                 
                 <button type="submit" class="btn btn_primary">
@@ -344,9 +290,9 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
             </form>
         </div>
 
-        <!-- Bus Fleet List -->
+        <!-- Bus List -->
         <div class="table_container">
-            <h3 class="p_1 mb_1">My Bus Fleet (<?php echo count($buses); ?> buses)</h3>
+            <h3 class="p_1 mb_1">My Buses (<?php echo count($buses); ?>)</h3>
             
             <?php if (empty($buses)): ?>
                 <div class="p_2 text_center">
@@ -372,14 +318,13 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                                 </td>
                                 <td>
                                     <span class="badge badge_<?php echo strtolower(str_replace('-', '', $bus['bus_type'])); ?>"><?php echo $bus['bus_type']; ?></span><br>
-                                    <small><?php echo $bus['actual_seats']; ?> seats (<?php echo $bus['seat_configuration']; ?>)</small><br>
-                                    <small style="color: #27ae60;">📍 Numbered 1-<?php echo $bus['actual_seats']; ?></small>
+                                    <small><?php echo $bus['actual_seats']; ?>/<?php echo $bus['total_seats']; ?> seats (<?php echo $bus['seat_configuration']; ?>)</small>
                                 </td>
                                 <td>
                                     <?php if ($bus['amenities']): ?>
                                         <small><?php echo htmlspecialchars($bus['amenities']); ?></small>
                                     <?php else: ?>
-                                        <small style="color: #999;">No amenities listed</small>
+                                        <small style="color: #999;">No amenities</small>
                                     <?php endif; ?>
                                 </td>
                                 <td>
@@ -390,7 +335,7 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                                 <td>
                                     <a href="buses.php?edit=<?php echo $bus['bus_id']; ?>" class="btn btn_primary" style="font-size: 0.8rem; padding: 0.25rem 0.5rem;">Edit</a>
                                     
-                                    <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this bus? This will also delete all its seats.');">
+                                    <form method="POST" style="display: inline;" onsubmit="return confirm('Delete this bus and all its seats?');">
                                         <input type="hidden" name="action" value="delete_bus">
                                         <input type="hidden" name="bus_id" value="<?php echo $bus['bus_id']; ?>">
                                         <button type="submit" class="btn" style="background: #e74c3c; font-size: 0.8rem; padding: 0.25rem 0.5rem;">Delete</button>
@@ -402,35 +347,12 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                 </table>
             <?php endif; ?>
         </div>
-
-        <!-- Help Section -->
-        <div class="alert alert_info mt_2">
-            <h4>💡 Bus Management Tips</h4>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin-top: 1rem;">
-                <div>
-                    <strong>🪑 Simple Seat Numbers:</strong><br>
-                    Seats are automatically numbered 1, 2, 3, 4... from front to back for easy identification.
-                </div>
-                <div>
-                    <strong>🚌 Bus Numbers:</strong><br>
-                    Use your official registration number for easy identification by passengers.
-                </div>
-                <div>
-                    <strong>⚙️ Seat Configuration:</strong><br>
-                    Choose the layout that matches your physical bus setup (2x2 or 2x3).
-                </div>
-                <div>
-                    <strong>🔧 Status Management:</strong><br>
-                    Set to 'Maintenance' when bus needs service to prevent new bookings.
-                </div>
-            </div>
-        </div>
     </main>
 
     <!-- Footer -->
     <footer class="footer">
         <div class="container">
-            <p>&copy; 2025 Road Runner Operator Panel. All rights reserved.</p>
+            <p>&copy; 2025 Road Runner. Clean and simple bus management.</p>
         </div>
     </footer>
 </body>
