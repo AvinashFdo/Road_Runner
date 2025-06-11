@@ -47,42 +47,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     $bus_id = $pdo->lastInsertId();
                     
-                    // FIXED: Generate seats with PERFECT simple numbering
-                    $seats_per_row = explode('x', $seat_configuration);
-                    $left_seats = (int)$seats_per_row[0];
-                    $right_seats = (int)$seats_per_row[1];
-                    $total_per_row = $left_seats + $right_seats;
-                    
-                    // Generate EXACTLY the number of seats with simple sequential numbering
-                    for ($seat_num = 1; $seat_num <= $total_seats; $seat_num++) {
-                        // Calculate seat type based on position
-                        $position_in_row = (($seat_num - 1) % $total_per_row) + 1;
-                        
-                        // Determine seat type
-                        $seat_type = 'middle';
-                        if ($total_per_row == 4) { // 2x2 configuration
-                            if ($position_in_row == 1 || $position_in_row == 4) {
-                                $seat_type = 'window';
-                            } elseif ($position_in_row == 2 || $position_in_row == 3) {
-                                $seat_type = 'aisle';
-                            }
-                        } elseif ($total_per_row == 5) { // 2x3 configuration
-                            if ($position_in_row == 1 || $position_in_row == 5) {
-                                $seat_type = 'window';
-                            } elseif ($position_in_row == 2 || $position_in_row == 3) {
-                                $seat_type = 'aisle';
-                            } else {
-                                $seat_type = 'middle';
-                            }
+                    // Auto-generate seats with simple numbers (1, 2, 3, 4, 5... 50)
+$seats_per_row = explode('x', $seat_configuration);
+$left_seats = (int)$seats_per_row[0];
+$right_seats = (int)$seats_per_row[1];
+$total_per_row = $left_seats + $right_seats;
+
+// Generate seats with simple sequential numbers
+for ($seat_number = 1; $seat_number <= $total_seats; $seat_number++) {
+    // Calculate which row and position this seat is in
+    $row = ceil($seat_number / $total_per_row);
+    $position_in_row = (($seat_number - 1) % $total_per_row) + 1;
+    
+    // Determine seat type based on position
+    $seat_type = 'middle'; // default
+    
+    if ($position_in_row == 1 || $position_in_row == $total_per_row) {
+        $seat_type = 'window'; // First and last seats in row are windows
+    } elseif ($position_in_row == $left_seats || $position_in_row == ($left_seats + 1)) {
+        $seat_type = 'aisle'; // Seats next to aisle
+    }
+    
+    // Insert seat with simple number
+    $stmt = $pdo->prepare("INSERT INTO seats (bus_id, seat_number, seat_type) VALUES (?, ?, ?)");
+    $stmt->execute([$bus_id, (string)$seat_number, $seat_type]);
+                            $seat_count++;
                         }
-                        
-                        // Insert seat with simple number (1, 2, 3, 4, 5...)
-                        $stmt = $pdo->prepare("INSERT INTO seats (bus_id, seat_number, seat_type) VALUES (?, ?, ?)");
-                        $stmt->execute([$bus_id, (string)$seat_num, $seat_type]);
                     }
-                    
-                    $message = "Bus added successfully with " . $total_seats . " seats numbered 1-" . $total_seats . "!";
-                }
+
+                    // Verify seat count
+                    $stmt = $pdo->prepare("SELECT COUNT(*) as created_seats FROM seats WHERE bus_id = ?");
+                    $stmt->execute([$bus_id]);
+                    $actual_created = $stmt->fetch()['created_seats'];
+
+                    if ($actual_created != $total_seats) {
+                        error_log("Warning: Bus ID $bus_id - Expected $total_seats seats, but created $actual_created seats");
+                    }
+
+                    $message = "Bus added successfully with " . $actual_created . " seats generated (Expected: " . $total_seats . ")!";
+                // Verify seat count
+                $stmt = $pdo->prepare("SELECT COUNT(*) as created_seats FROM seats WHERE bus_id = ?");
+                $stmt->execute([$bus_id]);
+                $actual_created = $stmt->fetch()['created_seats'];
+
+                $message = "Bus added successfully with " . $actual_created . " seats (numbered 1 to " . $total_seats . ")!";
             } catch (PDOException $e) {
                 $error = "Error adding bus: " . $e->getMessage();
             }
